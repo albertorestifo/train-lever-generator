@@ -25,7 +25,7 @@
   <div class="table-scroll"><table><thead><tr><th>Point</th><th>Label</th><th>Angle °</th><th>Lift mm</th><th>Type</th><th>Ramp to next</th></tr></thead><tbody id="nodes"></tbody></table></div>
   <button id="sort">Sort by angle</button>
  </details>
- <details><summary>Mechanism and spring assumptions</summary><label>Extra preload assumption (mm)<input id="preload" data-global="assumed_extra_preload_mm" type="number" step="any" value="0"></label><p class="muted">Only changes the reported spring spacing, not hardware. Fixed interface: 8 mm plate, ±58° stops, 10 mm roller diameter. The 1.4 mm cap is roller lift above baseline: the current modeled follower/spring envelope, not plate thickness or a measured spring limit. Raising it needs a mechanical review. Print counterbores upward.</p></details>
+ <details><summary>Mechanism and spring assumptions</summary><label>Extra preload assumption (mm)<input id="preload" data-global="assumed_extra_preload_mm" type="number" step="any" value="0"></label><p class="muted">Only changes the reported spring spacing, not hardware. Fixed interface: 8 mm plate, ±58° stops, 10 mm roller diameter. The generator allows 0–3 mm of roller lift above baseline, not plate thickness. Profiles above the previous 1.4 mm design envelope need mechanical clearance and spring-compression checks; this is not a measured spring limit. Print counterbores upward.</p></details>
 </section>
 <section class="card preview-card">
  <div class="section-title"><h2>Notch plate</h2><button class="primary" id="generate">Generate files</button></div>

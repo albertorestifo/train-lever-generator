@@ -1,5 +1,5 @@
 import {EditorModel,draftIssues,intervalForSelection,importDraft} from './model.js';
-import {evenlySpaced,ease} from './engine.js';
+import {evenlySpaced,ease,FIXED} from './engine.js';
 import './shape-help.js';
 const $=id=>document.getElementById(id),escape=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 let model=null,presets={},revision=0,timer=null,worker=null,lastValid=null,downloadUrls=[],issues=[],validatedRevision=null;
@@ -46,7 +46,7 @@ function renderGraph(){
  if(!n.length){$('travel').innerHTML='<p class="empty-graph">No points yet. Create a layout to begin.</p>';return;}
  const finite=n.filter(p=>Number.isFinite(p.angle_deg)&&Number.isFinite(p.lift_mm));
  if(!finite.length){$('travel').innerHTML='<p class="empty-graph">Complete point angles and lifts in Advanced points. Your draft is retained.</p>';return;}
- const lo=Math.min(-58,...finite.map(p=>p.angle_deg)),hi=Math.max(58,...finite.map(p=>p.angle_deg)),bottom=Math.min(0,...finite.map(p=>p.lift_mm)),top=Math.max(1.4,...finite.map(p=>p.lift_mm));
+ const lo=Math.min(-58,...finite.map(p=>p.angle_deg)),hi=Math.max(58,...finite.map(p=>p.angle_deg)),bottom=Math.min(0,...finite.map(p=>p.lift_mm)),top=Math.max(FIXED.max_lift_mm,...finite.map(p=>p.lift_mm));
  const x=v=>40+(v-lo)/(hi-lo)*660,y=v=>170-(v-bottom)/(top-bottom)*125;
  let drawing=`<path d="M40 30V170H710" fill="none" stroke="#c8d4de"/><text x="5" y="36">Lift</text><text x="7" y="51">mm</text><text x="7" y="170">${bottom}</text><text x="7" y="70">${top.toFixed(1)}</text><text x="40" y="206">${lo.toFixed(1)}°</text><text x="660" y="206">${hi.toFixed(1)}°</text>`;
  n.forEach((a,i)=>{const b=n[i+1];if(!b||![a.angle_deg,a.lift_mm,b.angle_deg,b.lift_mm].every(Number.isFinite))return;
@@ -86,7 +86,7 @@ function requestGeometry(generate,token){
  if(token!==revision)return;worker=new Worker(new URL('./worker.js',import.meta.url),{type:'module'});const active=worker;
  const fail=message=>{if(token!==revision)return;$('status').className='error';$('status').textContent=message;$('generate').disabled=true;$('issues').textContent='The geometry check could not isolate a single editable point. Inspect the narrow or steep ramps; try a wider span or smaller lift. Your draft is kept and can be saved.';stalePreview('Last valid preview — NOT the current draft. No files are generated for this draft.');};
  active.onmessage=({data})=>{active.terminate();if(worker===active)worker=null;if(token!==revision)return;if(!data.ok){fail(data.error);return;}
-  lastValid={svg:data.svg,config:structuredClone(model.config)};$('preview').innerHTML=data.svg;$('preview').classList.remove('stale');$('preview-label').hidden=true;$('issues').replaceChildren();$('status').className='ok';$('status').textContent=(generate?'Files ready':'Live geometry valid')+` · ${data.report.gate_count} marked notches · ${data.report.max_pressure_angle_deg.toFixed(1)}° maximum pressure angle`;$('report').textContent=JSON.stringify(data.report,null,2);validatedRevision=token;$('generate').disabled=false;
+  lastValid={svg:data.svg,config:structuredClone(model.config)};$('preview').innerHTML=data.svg;$('preview').classList.remove('stale');$('preview-label').hidden=true;$('issues').textContent=(data.report.warnings??[]).join(' ');$('status').className='ok';$('status').textContent=(generate?'Files ready':'Live geometry valid')+` · ${data.report.gate_count} marked notches · ${data.report.max_pressure_angle_deg.toFixed(1)}° maximum pressure angle`;$('report').textContent=JSON.stringify(data.report,null,2);validatedRevision=token;$('generate').disabled=false;
   if(generate)for(const file of data.files){const url=URL.createObjectURL(new Blob([file.content],{type:file.type}));downloadUrls.push(url);const a=document.createElement('a');a.href=url;a.download=file.name;a.textContent=file.label;$('downloads').append(a);}
  };
  active.onerror=e=>{active.terminate();if(worker===active)worker=null;fail(e.message||'The geometry worker could not finish. Reload the page and load your saved settings.');};
