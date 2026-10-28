@@ -7,7 +7,7 @@
 <main>
 <section class="card setup">
  <div class="toolbar"><label class="grow">Plate name<input id="name" data-global="name" autocomplete="off"></label><button id="undo" disabled>Undo</button><button id="redo" disabled>Redo</button><button id="save">Save settings</button><button id="import">Load settings</button><input id="file" type="file" accept=".json" hidden></div>
- <details id="new-layout"><summary>Start from a preset or create a new layout</summary><div class="toolbar"><label>Preset<select id="preset"></select></label><button id="load">Load preset</button><label>Evenly spaced notches<input id="count" type="number" min="2" max="51" step="1" value="9"></label><button id="even">Create layout</button></div><p class="muted">Replaces the current layout. You can Undo. Any supported count is allowed; dense patterns may need lower barriers.</p></details>
+ <details id="new-layout"><summary>Start from a preset or create a new layout</summary><div class="toolbar"><label>Preset<select id="preset"></select></label><button id="load">Load preset</button><label>Evenly spaced notches<input id="count" type="number" min="2" max="51" step="1" value="9"></label><label>Initial notch height (mm)<input id="initial-height" type="number" min="0" max="3" step="any" value="0.8"></label><button id="even">Create layout</button></div><p class="muted">Replaces the current layout. You can Undo. Height sets every barrier above a zero-lift notch bottom. Zero gives flat travel. You can edit individual barriers afterward; dense patterns may need lower heights.</p></details>
  <div id="notice" role="status" aria-live="polite"></div>
 </section>
 <div class="workspace">
