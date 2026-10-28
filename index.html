@@ -1,70 +1,40 @@
-<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Lever notch designer</title>
-<style>body{margin:0;background:#f2f4f7;color:#172536;font:15px system-ui}header{background:#172536;color:white;padding:22px 30px}h1{margin:0 0 5px;font-size:25px}main{display:grid;grid-template-columns:minmax(460px,1fr) minmax(380px,1fr);gap:20px;padding:24px;max-width:1450px;margin:auto}.card{background:white;border:1px solid #d8e0e7;border-radius:10px;padding:20px}label{display:block;margin:12px 0 5px}input,select,button{font:inherit;padding:7px;border:1px solid #bcc8d3;border-radius:4px}button{cursor:pointer;background:#edf2f6}button.primary{background:#125d87;color:white;border:0;padding:10px 16px}input[type=number]{width:76px}table{width:100%;border-collapse:collapse;margin:16px 0}td,th{text-align:left;padding:6px 3px;border-bottom:1px solid #e5eaf0}td input,td select{width:100%;box-sizing:border-box}td:first-child{width:85px}td:nth-child(2){width:85px}small,.muted{color:#566777}.preview-card{align-self:start;position:sticky;top:16px}#preview svg{width:100%;max-height:680px}#status{padding:12px;margin:12px 0;border-radius:5px;background:#edf2f6}.error{background:#ffe5df!important;color:#852e1a}.ok{background:#e7f2e8!important;color:#1e6230}#downloads a{display:inline-block;margin:4px;padding:8px 13px;background:#125d87;color:white;border-radius:4px;text-decoration:none}details{margin-top:15px}pre{white-space:pre-wrap;font-size:12px}p{line-height:1.5}.note{border-left:3px solid #df9c3b;padding-left:10px}@media(max-width:950px){main{grid-template-columns:minmax(0,1fr);padding:12px}.card{min-width:0;overflow:auto}.preview-card{position:static}}</style>
-<header><h1>Lever notch designer</h1><div>Custom P08 plates for the existing v23 mechanism · millimetres and degrees</div></header>
-<main><section class="card"><label for="preset">Start from a profile</label><select id="preset"></select> <button id="load">Load</button><label for="name">Plate name</label><input id="name" style="width:95%"><p>Each row is a point on the <b>roller motion</b>, not a raw cut depth. A gate is a low point; a crest is the barrier between gates. Equal lift at successive points makes a smooth travel section.</p><p class="note">For a stronger centre, increase its adjacent crest heights or reduce their angular distance within the validated limits. The tool rejects ramps the 10 mm roller cannot follow.</p><div>Evenly spaced gates: <input id="count" aria-label="Number of evenly spaced gates" type="number" min="2" max="51" step="1" value="9"> <button id="even">Create</button></div>
-<table><thead><tr><th>Angle °</th><th>Lift mm</th><th>Type</th><th>Shape to next</th><th></th></tr></thead><tbody id="nodes"></tbody></table><button id="add">Add row</button> <button id="sort">Sort by angle</button><label>Extra preload assumption (only affects reported spring spacing)</label><input type="number" id="preload" min="0" max="1" step="0.1" value="0"><p><small>Existing interface locked: 8 mm thick; ±58° stops; 5 mm roller; maximum lift 1.4 mm. Counterbores face up when printing.</small></p><button class="primary" id="generate">Validate &amp; generate</button> <button id="save">Save settings</button> <button id="import">Import settings</button><input type="file" id="file" accept=".json" hidden><details><summary>How to describe notch depth and asymmetric ramps</summary><p>A gate's depth on either side is the neighbouring crest lift minus the gate lift. The angular gap sets ramp width. Edit them independently to make one side steeper. A passive cam is reciprocal: a hard uphill approach becomes an assisted downhill departure in the reverse direction; it cannot create a one-way latch.</p><p><b>Cosine</b> is the normal starting point. <b>Quintic</b> has smoother acceleration endpoints but can need wider ramps. <b>Linear blend</b> has a constant-slope middle with eased ends; a sharp unsmoothed corner is intentionally unavailable.</p><p>Positive angles move toward Emergency (+58°, negative assembly Y). Confirm which end faces away from you. For initial tactile comparison, reduce the separate friction brake so it does not mask the detents; keep spring preload the same between discs.</p></details></section>
-<section class="card preview-card"><h2>Live notch geometry</h2><p class="muted">Updates as you edit. Generate when ready to download printable files.</p><div id="status" role="status" aria-live="polite">Loading preview…</div><div id="preview"></div><div id="downloads"></div><p class="muted">Passing geometry checks is not a measured force rating. Inspect the first print and test gently through every gate before increasing preload. Keep the existing mechanical stops and parking-pin cam-change procedure.</p><details><summary>Validation details</summary><pre id="report"></pre></details></section></main>
-<script type="module">
-import {prepare} from "./engine.js";
-import './shape-help.js';
-
-let presets={},nodes=[];const $=id=>document.getElementById(id);function read(){return {name:$('name').value,assumed_extra_preload_mm:Number($('preload').value),nodes:[...$('nodes').rows].map(r=>({angle_deg:Number(r.cells[0].firstChild.value),lift_mm:Number(r.cells[1].firstChild.value),kind:r.cells[2].firstChild.value,shape:r.cells[3].firstChild.value,label:''}))}}function render(c){$('name').value=c.name||'Custom';$('preload').value=c.assumed_extra_preload_mm||0;nodes=c.nodes;$('nodes').replaceChildren();for(let i=0;i<nodes.length;i++){const n=nodes[i],r=$('nodes').insertRow();for(const k of ['angle_deg','lift_mm']){const e=document.createElement('input');e.type='number';e.step=k==='angle_deg'?'0.1':'0.05';e.value=n[k];r.insertCell().append(e)}for(const [k,opts] of [['kind',['gate','crest','flat']],['shape',['cosine','quintic','linear_blend']]]){const e=document.createElement('select');opts.forEach(v=>e.add(new Option(v.replace('_',' '),v)));e.value=n[k]||opts[0];r.insertCell().append(e)}const b=document.createElement('button');b.textContent='×';b.title='Remove row';b.onclick=()=>{r.remove();schedulePreview()};r.insertCell().append(b)}schedulePreview()}$('load').onclick=()=>render(structuredClone(presets[$('preset').value]));$('add').onclick=()=>{let c=read();c.nodes.push({angle_deg:0,lift_mm:0,kind:'gate',shape:'cosine'});render(c)};$('sort').onclick=()=>{let c=read();c.nodes.sort((a,b)=>a.angle_deg-b.angle_deg);render(c)};$('even').onclick=()=>{let n=Number($('count').value),v=[];if(!Number.isInteger(n)||n<2||n>51){$('status').textContent='Enter a whole number from 2 to 51. Dense patterns may fail roller-contact checks.';$('status').className='error';return;}for(let i=0;i<n;i++){v.push({angle_deg:-58+i*116/(n-1),lift_mm:0,kind:'gate',shape:'cosine'});if(i<n-1)v.push({angle_deg:-58+(i+.5)*116/(n-1),lift_mm:.8,kind:'crest',shape:'cosine'})}render({name:n+' custom gates',nodes:v})}; 
-// A revision token prevents slow responses from replacing newer edits.
-let revision=0, previewTimer, previewRequest, downloadUrls=[];
-function invalidate(){
-  clearTimeout(previewTimer);revision++;
-  if(previewRequest){previewRequest.terminate();previewRequest=null;}
-  for(const url of downloadUrls)URL.revokeObjectURL(url);downloadUrls=[];
-  $("generate").disabled=false;
-  $('downloads').replaceChildren();$('report').textContent='Settings changed; generate to validate the printable mesh.';
-  $('status').className='';$('status').textContent='Updating preview…';
-  $('preview').style.opacity='.35';
-  return revision;
-}
-function schedulePreview(){
-  const token=invalidate();
-  previewTimer=setTimeout(()=>requestGeometry(false,token),200);
-}
-async function requestGeometry(generate,token){
-
-  try{
-    // Empty number fields are incomplete edits, never silently interpreted as zero.
-    const fields=[...$('nodes').querySelectorAll('input'),$('preload')];
-    if(fields.some(e=>e.value.trim()===''||e.validity.badInput))throw Error('Complete the numeric fields to update the preview.');
-    const data=await new Promise((resolve,reject)=>{
-      const worker=new Worker(new URL('./worker.js',import.meta.url),{type:'module'});
-      previewRequest=worker;
-      worker.onmessage=e=>{worker.terminate();if(previewRequest===worker)previewRequest=null;resolve(e.data)};
-      worker.onerror=e=>{worker.terminate();if(previewRequest===worker)previewRequest=null;reject(Error(e.message||'Geometry worker failed.'))};
-      worker.postMessage({config:read(),generate});
-    });
-    if(token!==revision)return;
-    if(!data.ok)throw Error(data.error);
-    $('preview').innerHTML=data.svg;$('preview').style.opacity='1';
-    $('status').className='ok';
-    $('status').textContent=(generate?'Geometry passed':'Live preview')+' · '+data.report.gate_count+' gates · '+data.report.max_pressure_angle_deg.toFixed(1)+'° maximum pressure angle';
-    $('report').textContent=JSON.stringify(data.report,null,2);
-    if(generate)for(const file of data.files){
-      const url=URL.createObjectURL(new Blob([file.content],{type:file.type}));downloadUrls.push(url);
-      const a=document.createElement('a');a.textContent=file.label;a.href=url;a.download=file.name;$('downloads').append(a);
-    }
-  }catch(e){
-    if(token!==revision||e.name==='AbortError')return;
-    $('status').textContent=e.message;$('status').className='error';
-    $('preview').replaceChildren();$('preview').style.opacity='1';
-    $('report').textContent='No geometry exported for these settings.';
-  }finally{
-    if(generate)$('generate').disabled=false;
-  }
-}
-$('nodes').addEventListener('input',schedulePreview);
-$('nodes').addEventListener('change',schedulePreview);
-$('name').addEventListener('input',schedulePreview);
-$('preload').addEventListener('input',schedulePreview);
-$('generate').onclick=()=>{
-  const token=invalidate();$('generate').disabled=true;
-  $('status').textContent='Checking roller contact and generating…';
-  requestGeometry(true,token);
-}
-;$('save').onclick=()=>{const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([JSON.stringify(read(),null,2)],{type:'application/json'}));a.download='notch-settings.json';a.click();URL.revokeObjectURL(a.href)};$('import').onclick=()=>$('file').click();$('file').onchange=async()=>{try{const c=JSON.parse(await $('file').files[0].text());prepare(c);render(c)}catch(e){$('status').textContent=e.message;$('status').className='error'}};fetch('./presets.json').then(r=>r.json()).then(d=>{presets=d;Object.keys(d).forEach(k=>$('preset').add(new Option(k,k)));$('preset').value='class323-9-contrast';$('load').click()}).catch(e=>{$('status').textContent='Cannot load presets: '+e.message;$('status').className='error'});
-</script></html>
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Lever notch designer</title>
+<link rel="stylesheet" href="./editor.css">
+<header><h1>Lever notch designer</h1><p>Build a travel pattern, select a point or ramp, and see your notch plate update.</p></header>
+<main>
+<section class="card setup">
+ <div class="toolbar"><label class="grow">Plate name<input id="name" data-global="name" autocomplete="off"></label><button id="undo" disabled>Undo</button><button id="redo" disabled>Redo</button><button id="save">Save settings</button><button id="import">Load settings</button><input id="file" type="file" accept=".json" hidden></div>
+ <details id="new-layout"><summary>Start from a preset or create a new layout</summary><div class="toolbar"><label>Preset<select id="preset"></select></label><button id="load">Load preset</button><label>Evenly spaced notches<input id="count" type="number" min="2" max="51" step="1" value="9"></label><button id="even">Create layout</button></div><p class="muted">Replaces the current layout. You can Undo. Any supported count is allowed; dense patterns may need lower barriers.</p></details>
+ <div id="notice" role="status" aria-live="polite"></div>
+</section>
+<div class="workspace">
+<section class="card editor-card">
+ <div class="section-title"><h2>Lever travel</h2><span id="point-count" class="muted"></span></div>
+ <p class="muted">Select a dot or the ramp between two dots. The height is roller lift, not force or raw cut depth.</p>
+ <div id="travel" aria-label="Editable follower travel diagram"></div>
+ <div class="toolbar selection-tools"><button id="previous" aria-label="Select previous feature">←</button><label class="grow">Selected feature<select id="selection"></select></label><button id="next" aria-label="Select next feature">→</button></div>
+ <section id="inspector" aria-label="Selected feature controls"></section>
+ <div class="toolbar"><button id="insert">Insert point in span</button><button id="remove">Remove selected point</button></div>
+ <p class="muted small">Inserting a point adds a zero-slope junction and changes that ramp. Existing points stay in place. Undo is always available.</p>
+ <div id="shape-help-slot"></div>
+ <details id="advanced"><summary>Advanced points — all exact values</summary>
+  <p class="muted">This is the same design, with every point exposed. Switching views never regenerates it. Type is an annotation; coordinates create the geometry.</p>
+  <div class="table-scroll"><table><thead><tr><th>Point</th><th>Label</th><th>Angle °</th><th>Lift mm</th><th>Type</th><th>Ramp to next</th></tr></thead><tbody id="nodes"></tbody></table></div>
+  <button id="sort">Sort by angle</button>
+ </details>
+ <details><summary>Mechanism and spring assumptions</summary><label>Extra preload assumption (mm)<input id="preload" data-global="assumed_extra_preload_mm" type="number" step="any" value="0"></label><p class="muted">Only changes the reported spring spacing, not hardware. Fixed interface: 8 mm plate, ±58° stops, 10 mm roller diameter. The 1.4 mm cap is roller lift above baseline: the current modeled follower/spring envelope, not plate thickness or a measured spring limit. Raising it needs a mechanical review. Print counterbores upward.</p></details>
+</section>
+<section class="card preview-card">
+ <div class="section-title"><h2>Notch plate</h2><button class="primary" id="generate">Generate files</button></div>
+ <div id="status" role="status" aria-live="polite">Loading layout…</div>
+ <div id="issues"></div><div id="preview-label" class="preview-label" hidden></div><div id="preview"></div><div id="downloads"></div>
+ <p class="muted small">Preview updates while you edit. Generated files are made from the current valid design. Actual feel also depends on preload, friction and print fit.</p>
+ <details><summary>Engineering checks</summary><pre id="report"></pre></details>
+</section>
+</div>
+</main>
+<script type="module" src="./editor.js"></script>
+</html>

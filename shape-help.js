@@ -11,7 +11,8 @@ help.innerHTML=`<summary>Cosine, quintic or linear blend — what changes?</summ
 </ul>
 <div id="shape-comparison"></div>
 <p><b>For a more noticeable centre notch:</b> first adjust the heights and angular widths of the barriers on either side of it. Shape then tunes the transition. Actual feel also depends on spring preload, friction and print fit; the preview shows motion, not measured force.</p>`;
-document.querySelector('table').before(help);
+const slot=document.getElementById('shape-help-slot');
+if(slot)slot.append(help);else document.querySelector('table').before(help);
 // Draw the exact interpolation functions at equal height and width.
 const shapes=[['cosine','Cosine','#125d87'],['quintic','Quintic','#a33e6a'],['linear_blend','Linear blend','#996315']];
 const curves=shapes.map(([key,label,color],i)=>{
