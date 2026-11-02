@@ -1,5 +1,5 @@
 import {EditorModel,draftIssues,intervalForSelection,importDraft} from './model.js';
-import {evenlySpaced,ease,FIXED} from './engine.js';
+import {evenlySpaced,ease,FIXED,SHAPES} from './engine.js';
 import './shape-help.js';
 const $=id=>document.getElementById(id),escape=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 let model=null,presets={},revision=0,timer=null,worker=null,lastValid=null,downloadUrls=[],issues=[],validatedRevision=null;
@@ -7,7 +7,8 @@ const number=value=>value===''?'':Number(value);
 const pointName=(n,i)=>String(n?.label||`Point ${i+1}`);
 const selectionValue=s=>`${s.kind}:${s.index}`;
 function selections(){return model.config.nodes.flatMap((_,i)=>i<model.config.nodes.length-1?[{kind:'point',index:i},{kind:'span',index:i}]:[{kind:'point',index:i}])}
-function options(values,value){const all=values.includes(value)?values:[...values,value];return all.map(v=>`<option value="${escape(v)}"${v===value?' selected':''}>${escape(v==='linear_blend'?'Linear blend':v)}</option>`).join('')}
+const SHAPE_LABELS={cosine:'Cosine',quintic:'Quintic',linear_blend:'Linear blend',snap_up:'Snap up (rising)',snap_down:'Snap down (falling)'};
+function options(values,value){const all=values.includes(value)?values:[...values,value];return all.map(v=>`<option value="${escape(v)}"${v===value?' selected':''}>${escape(SHAPE_LABELS[v]??v)}</option>`).join('')}
 function input(i,key,label,{type='number',readonly=false}={}){
  const v=model.config.nodes[i]?.[key]??'';
  return `<label${type==='text'?' class="wide"':''}>${escape(label)}<input data-node="${i}" data-field="${key}" type="${type}" ${type==='number'?'step="any"':''} value="${escape(v)}"${readonly?' readonly':''} aria-label="${escape(label)} for point ${i+1}"></label>`;
@@ -25,7 +26,7 @@ function renderInspector(){
  if(!p){$('inspector').innerHTML='<p>Start from a preset or create a layout above.</p>';$('new-layout').open=true;return;}
  if(kind==='span'){
   const b=n[i+1];
-  $('inspector').innerHTML=`<h3 id="selected-title">Ramp ${i+1} → ${i+2}</h3><p class="muted small">From ${escape(pointName(p,i))} to ${escape(pointName(b,i+1))}. The shape applies only to this span.</p><div class="neighbor-grid"><div><h4>Start</h4><div class="fields">${input(i,'angle_deg','Start angle °')}${input(i,'lift_mm','Start lift mm')}</div></div><div><h4>End</h4><div class="fields">${input(i+1,'angle_deg','End angle °')}${input(i+1,'lift_mm','End lift mm')}</div></div></div><div class="fields">${selectInput(i,'shape','Transition shape',['cosine','quintic','linear_blend'])}</div><p id="selection-context" class="muted small"></p>`;
+  $('inspector').innerHTML=`<h3 id="selected-title">Ramp ${i+1} → ${i+2}</h3><p class="muted small">From ${escape(pointName(p,i))} to ${escape(pointName(b,i+1))}. The shape applies only to this span.</p><div class="neighbor-grid"><div><h4>Start</h4><div class="fields">${input(i,'angle_deg','Start angle °')}${input(i,'lift_mm','Start lift mm')}</div></div><div><h4>End</h4><div class="fields">${input(i+1,'angle_deg','End angle °')}${input(i+1,'lift_mm','End lift mm')}</div></div></div><div class="fields">${selectInput(i,'shape','Transition shape',SHAPES)}</div><p id="selection-context" class="muted small"></p>`;
  }else{
   const neighbor=(j,title)=>j<0||j>=n.length?'':`<div class="neighbor"><h4>${title}: ${escape(pointName(n[j],j))}</h4><div class="fields">${input(j,'angle_deg','Neighbor angle °')}${input(j,'lift_mm','Neighbor lift mm')}</div><p>Shared with the next ramp on that side.</p></div>`;
   $('inspector').innerHTML=`<h3 id="selected-title">${escape(pointName(p,i))}</h3><div class="fields">${input(i,'label','Label',{type:'text'})}${input(i,'angle_deg','Position °')}${input(i,'lift_mm','Roller lift mm')}${selectInput(i,'kind','Type / annotation',['gate','crest','flat'])}</div><p class="muted small">A notch is a low point between higher barriers. Changing its type alone does not reshape it.</p><div class="neighbor-grid">${neighbor(i-1,'Previous point (− angle)')}${neighbor(i+1,'Next point (+ angle)')}</div><p id="selection-context" class="muted small"></p>`;
@@ -39,7 +40,7 @@ function renderContext(){
  else{const parts=[];if(i&&Number.isFinite(a?.lift_mm)&&Number.isFinite(n[i-1].lift_mm))parts.push(`Previous neighbor is ${(n[i-1].lift_mm-a.lift_mm).toFixed(3)} mm above this point`);if(b&&Number.isFinite(a?.lift_mm)&&Number.isFinite(b.lift_mm))parts.push(`next neighbor is ${(b.lift_mm-a.lift_mm).toFixed(3)} mm above`);target.textContent=parts.join('; ')+'. Edits to a shared barrier affect both adjacent ramps.';}
 }
 function renderTable(){
- $('nodes').innerHTML=model.config.nodes.map((n,i)=>`<tr data-row="${i}"><td><button data-select-point="${i}" aria-label="Select point ${i+1}">${i+1}</button></td><td>${input(i,'label','Label',{type:'text'})}</td><td>${input(i,'angle_deg','Angle °')}</td><td>${input(i,'lift_mm','Lift mm')}</td><td>${selectInput(i,'kind','Type',['gate','crest','flat'])}</td><td>${i<model.config.nodes.length-1?selectInput(i,'shape','Shape to next',['cosine','quintic','linear_blend']):'<span class="muted">End stop</span>'}</td></tr>`).join('');
+ $('nodes').innerHTML=model.config.nodes.map((n,i)=>`<tr data-row="${i}"><td><button data-select-point="${i}" aria-label="Select point ${i+1}">${i+1}</button></td><td>${input(i,'label','Label',{type:'text'})}</td><td>${input(i,'angle_deg','Angle °')}</td><td>${input(i,'lift_mm','Lift mm')}</td><td>${selectInput(i,'kind','Type',['gate','crest','flat'])}</td><td>${i<model.config.nodes.length-1?selectInput(i,'shape','Shape to next',SHAPES):'<span class="muted">End stop</span>'}</td></tr>`).join('');
 }
 function renderGraph(){
  const n=model.config.nodes,bad=new Set(issues.flatMap(x=>x.indices));
@@ -50,7 +51,7 @@ function renderGraph(){
  const x=v=>40+(v-lo)/(hi-lo)*660,y=v=>170-(v-bottom)/(top-bottom)*125;
  let drawing=`<path d="M40 30V170H710" fill="none" stroke="#c8d4de"/><text x="5" y="36">Lift</text><text x="7" y="51">mm</text><text x="7" y="170">${bottom}</text><text x="7" y="70">${top.toFixed(1)}</text><text x="40" y="206">${lo.toFixed(1)}°</text><text x="660" y="206">${hi.toFixed(1)}°</text>`;
  n.forEach((a,i)=>{const b=n[i+1];if(!b||![a.angle_deg,a.lift_mm,b.angle_deg,b.lift_mm].every(Number.isFinite))return;
-  const shape=a.shape??'cosine',known=['cosine','quintic','linear_blend'].includes(shape),path=Array.from({length:31},(_,j)=>{const u=j/30,h=a.lift_mm+(b.lift_mm-a.lift_mm)*(known?ease(u,shape)[0]:u);return `${j?'L':'M'}${x(a.angle_deg+u*(b.angle_deg-a.angle_deg)).toFixed(2)},${y(h).toFixed(2)}`}).join(' ');
+  const shape=a.shape??'cosine',known=SHAPES.includes(shape),path=Array.from({length:31},(_,j)=>{const u=j/30,h=a.lift_mm+(b.lift_mm-a.lift_mm)*(known?ease(u,shape)[0]:u);return `${j?'L':'M'}${x(a.angle_deg+u*(b.angle_deg-a.angle_deg)).toFixed(2)},${y(h).toFixed(2)}`}).join(' ');
   drawing+=`<g role="button" tabindex="0" data-kind="span" data-index="${i}" aria-label="Select ramp ${i+1} to ${i+2}" class="${model.selection.kind==='span'&&model.selection.index===i?'selected':''}"><path d="${path}" class="ramp"/><path d="${path}" class="hit"/></g>`;
  });
  n.forEach((p,i)=>{if(!Number.isFinite(p.angle_deg)||!Number.isFinite(p.lift_mm))return;const selected=model.selection.kind==='point'&&model.selection.index===i;drawing+=`<g role="button" tabindex="0" data-kind="point" data-index="${i}" aria-label="Select point ${i+1}: ${escape(pointName(p,i))}" class="${selected?'selected ':''}${bad.has(i)?'invalid':''}"><circle cx="${x(p.angle_deg)}" cy="${y(p.lift_mm)}" r="11" fill="transparent"/><circle class="point-dot" cx="${x(p.angle_deg)}" cy="${y(p.lift_mm)}" r="5"/><text x="${x(p.angle_deg)}" y="${y(p.lift_mm)-11}" text-anchor="middle">${i+1}</text></g>`;});

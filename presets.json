@@ -745,5 +745,130 @@
         "shape": "cosine"
       }
     ]
+  },
+  "class323-9-snap": {
+    "name": "9 gates - snap",
+    "assumed_extra_preload_mm": 0,
+    "nodes": [
+      {
+        "angle_deg": -58.0,
+        "lift_mm": 0,
+        "kind": "gate",
+        "label": "1",
+        "shape": "snap_up"
+      },
+      {
+        "angle_deg": -50.75,
+        "lift_mm": 1.2,
+        "kind": "crest",
+        "label": "",
+        "shape": "snap_down"
+      },
+      {
+        "angle_deg": -43.5,
+        "lift_mm": 0,
+        "kind": "gate",
+        "label": "2",
+        "shape": "snap_up"
+      },
+      {
+        "angle_deg": -36.25,
+        "lift_mm": 1.2,
+        "kind": "crest",
+        "label": "",
+        "shape": "snap_down"
+      },
+      {
+        "angle_deg": -29.0,
+        "lift_mm": 0,
+        "kind": "gate",
+        "label": "3",
+        "shape": "snap_up"
+      },
+      {
+        "angle_deg": -21.75,
+        "lift_mm": 1.2,
+        "kind": "crest",
+        "label": "",
+        "shape": "snap_down"
+      },
+      {
+        "angle_deg": -14.5,
+        "lift_mm": 0,
+        "kind": "gate",
+        "label": "4",
+        "shape": "snap_up"
+      },
+      {
+        "angle_deg": -9.0,
+        "lift_mm": 1.4,
+        "kind": "crest",
+        "label": "",
+        "shape": "snap_down"
+      },
+      {
+        "angle_deg": 0.0,
+        "lift_mm": -1.8,
+        "kind": "gate",
+        "label": "5",
+        "shape": "snap_up"
+      },
+      {
+        "angle_deg": 9.0,
+        "lift_mm": 1.4,
+        "kind": "crest",
+        "label": "",
+        "shape": "snap_down"
+      },
+      {
+        "angle_deg": 14.5,
+        "lift_mm": 0,
+        "kind": "gate",
+        "label": "6",
+        "shape": "snap_up"
+      },
+      {
+        "angle_deg": 21.75,
+        "lift_mm": 1.2,
+        "kind": "crest",
+        "label": "",
+        "shape": "snap_down"
+      },
+      {
+        "angle_deg": 29.0,
+        "lift_mm": 0,
+        "kind": "gate",
+        "label": "7",
+        "shape": "snap_up"
+      },
+      {
+        "angle_deg": 36.25,
+        "lift_mm": 1.2,
+        "kind": "crest",
+        "label": "",
+        "shape": "snap_down"
+      },
+      {
+        "angle_deg": 43.5,
+        "lift_mm": 0,
+        "kind": "gate",
+        "label": "8",
+        "shape": "snap_up"
+      },
+      {
+        "angle_deg": 49.0,
+        "lift_mm": 1.4,
+        "kind": "crest",
+        "label": "",
+        "shape": "snap_down"
+      },
+      {
+        "angle_deg": 58.0,
+        "lift_mm": -1.9,
+        "kind": "gate",
+        "label": "Emergency",
+        "shape": "snap_up"
+      }
+    ]
   }
 }
