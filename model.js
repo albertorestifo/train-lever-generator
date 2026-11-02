@@ -1,4 +1,5 @@
 import {FIXED,SHAPES} from './engine.js';
+import {notchRecipe} from './recipe.js';
 // One lossless configuration serves both the guided and advanced editor.
 const clone=value=>structuredClone(value);
 export function importDraft(value){
@@ -38,6 +39,7 @@ export class EditorModel{
  editNode(index,key,value,group=null){return this.change(()=>{this.config.nodes[index][key]=value},group)}
  editGlobal(key,value,group=null){return this.change(()=>{this.config[key]=value},group)}
  replace(config){const next=importDraft(config);return this.change(()=>{this.config=next;this.selection={kind:'point',index:0}})}
+ applyDesign(design){const next=importDraft({...notchRecipe(design),design});return this.change(()=>{this.config=next;this.selection={kind:'point',index:0}})}
  undo(){if(!this.canUndo)return;this.future.push(this.snapshot());const s=this.past.pop();this.config=s.config;this.selection=s.selection;this.endGroup();}
  redo(){if(!this.canRedo)return;this.past.push(this.snapshot());const s=this.future.pop();this.config=s.config;this.selection=s.selection;this.endGroup();}
  insertPoint(){

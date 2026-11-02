@@ -3,11 +3,11 @@ import {ease} from './engine.js';
 const help=document.createElement('details');
 help.id='shape-help';
 help.innerHTML=`<summary>Ramp shapes — what changes?</summary>
-<p><b>“Shape to next” controls the ramp from this row to the next row.</b> It changes how quickly the roller climbs or descends, without changing either endpoint’s angle or lift. It does not apply to the last row. If both rows have the same lift, all five shapes give the same flat travel.</p>
+<p><b>“Shape to next” controls the ramp from this row to the next row.</b> It changes how quickly the roller climbs or descends, without changing either endpoint’s angle or height. It does not apply to the last row. If both rows have the same lift, all five shapes give the same flat travel.</p>
 <ul>
 <li><b>Cosine — rounded ramp; start here.</b> Starts and finishes with zero slope, with a gradual rise to the steepest slope halfway through. A balanced starting point for ordinary notches.</li>
 <li><b>Quintic — gentler near the ends, steeper in the middle.</b> Both slope and curvature settle to zero at the endpoints. For the same height and angular width, its middle is steeper than cosine: smoother entry does <em>not</em> mean lower peak resistance. Narrow ramps may need widening.</li>
-<li><b>Snap up / Snap down — abrupt step, for detent clicks.</b> Snap up climbs steeply through the first part of the ramp, then settles gently onto the top; snap down is its mirror, with a gentle start and a steep final drop. They are meant for snap-cam notches and need a lift change to have any effect; check roller contact and pressure angle in the validation.</li>
+<li><b>Snap rising / Snap falling — abrupt step, for detent clicks.</b> Snap rising climbs steeply through the first part of the ramp, then settles gently onto the top; snap falling is its mirror, with a gentle start and a steep final drop. They are meant for snap-cam notches and need a lift change to have any effect; check roller contact and pressure angle in the validation.</li>
 <li><b>Linear blend — a steady-slope middle.</b> Eases in over the first 20% of the ramp, keeps a constant slope through the middle 60%, then eases out over the last 20%. This spreads the climb more evenly; spring force still changes, so it does not guarantee constant lever resistance.</li>
 </ul>
 <div id="shape-comparison"></div>

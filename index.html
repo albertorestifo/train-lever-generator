@@ -1,40 +1,49 @@
 <!doctype html>
 <html lang="en">
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Lever notch designer</title>
+<title>Notch disk generator</title>
 <link rel="stylesheet" href="./editor.css">
-<header><h1>Lever notch designer</h1><p>Build a travel pattern, select a point or ramp, and see your notch plate update.</p></header>
-<main>
-<section class="card setup">
- <div class="toolbar"><label class="grow">Plate name<input id="name" data-global="name" autocomplete="off"></label><button id="undo" disabled>Undo</button><button id="redo" disabled>Redo</button><button id="save">Save settings</button><button id="import">Load settings</button><input id="file" type="file" accept=".json" hidden></div>
- <details id="new-layout"><summary>Start from a preset or create a new layout</summary><div class="toolbar"><label>Preset<select id="preset"></select></label><button id="load">Load preset</button><label>Evenly spaced notches<input id="count" type="number" min="2" max="51" step="1" value="9"></label><label>Initial notch height (mm)<input id="initial-height" type="number" min="0" max="3" step="any" value="0.8"></label><button id="even">Create layout</button></div><p class="muted">Replaces the current layout. You can Undo. Height sets every barrier above a zero-lift notch bottom. Zero gives flat travel. You can edit individual barriers afterward; dense patterns may need lower heights.</p></details>
- <div id="notice" role="status" aria-live="polite"></div>
+<header><h1>Notch disk generator</h1><p>Choose how many positions your lever has and how each one feels.</p></header>
+<main class="layout">
+<section class="card disk-card" aria-label="Disk preview and download">
+ <div id="preview-label" class="preview-label" hidden></div><div id="preview"></div>
+ <div id="status" role="status" aria-live="polite">Loading the disk…</div>
+ <div id="issues"></div>
+ <button class="download" id="download" disabled>Download STL</button>
+ <details id="more-formats"><summary>More formats</summary><div id="downloads"></div><p id="downloads-hint" class="muted small">Press Download STL to make the OpenSCAD, Settings, Validation and Motion CSV files for the current disk.</p></details>
+ <p class="muted small">Actual feel also depends on spring preload, friction and print fit.</p>
 </section>
-<div class="workspace">
-<section class="card editor-card">
- <div class="section-title"><h2>Lever travel</h2><span id="point-count" class="muted"></span></div>
- <p class="muted">Select a dot or the ramp between two dots. The height is roller lift, not force or raw cut depth.</p>
- <div id="travel" aria-label="Editable follower travel diagram"></div>
- <div class="toolbar selection-tools"><button id="previous" aria-label="Select previous feature">←</button><label class="grow">Selected feature<select id="selection"></select></label><button id="next" aria-label="Select next feature">→</button></div>
- <section id="inspector" aria-label="Selected feature controls"></section>
- <div class="toolbar"><button id="insert">Insert point in span</button><button id="remove">Remove selected point</button></div>
- <p class="muted small">Inserting a point adds a zero-slope junction and changes that ramp. Existing points stay in place. Undo is always available.</p>
- <div id="shape-help-slot"></div>
- <details id="advanced"><summary>Advanced points — all exact values</summary>
-  <p class="muted">This is the same design, with every point exposed. Switching views never regenerates it. Type is an annotation; coordinates create the geometry.</p>
-  <div class="table-scroll"><table><thead><tr><th>Point</th><th>Label</th><th>Angle °</th><th>Lift mm</th><th>Type</th><th>Ramp to next</th></tr></thead><tbody id="nodes"></tbody></table></div>
-  <button id="sort">Sort by angle</button>
+<section class="card controls-card" aria-label="Disk controls">
+ <h2>Positions</h2>
+ <div class="stepper"><button id="count-down" aria-label="Fewer positions">−</button><output id="count-value" aria-label="Number of positions">9</output><button id="count-up" aria-label="More positions">+</button></div>
+ <p class="muted small">Spread evenly over the lever's full travel, from 2 to 13.</p>
+ <h2>Feel</h2>
+ <p class="muted small">Tap a position to change it: Standard, then Deep, then Smooth. The two end positions switch between Standard and Deep.</p>
+ <div id="chips" role="group" aria-label="Feel of each position"></div>
+ <div id="simple-notice" role="status" aria-live="polite"></div>
+ <p class="legend"><span><i class="key standard"></i>Standard: a clear click.</span> <span><i class="key deep"></i>Deep: a strong hold, for positions like centre or emergency.</span> <span><i class="key smooth"></i>Smooth: no clicks.</span></p>
+ <div id="fine-tuned" hidden><p>Fine-tuned: your exact values are in use</p><button id="reset">Reset to Standard/Deep</button></div>
+ <details id="fine-tune"><summary>Fine-tune (advanced)</summary>
+  <div class="toolbar"><label class="grow">Disk name<input id="name" data-global="name" autocomplete="off"></label><button id="undo" disabled>Undo</button><button id="redo" disabled>Redo</button><button id="save">Save settings</button><button id="import">Load settings</button><input id="file" type="file" accept=".json" hidden></div>
+  <details id="new-layout"><summary>Start from a preset or create a new layout</summary><div class="toolbar"><label>Preset<select id="preset"><option value="" disabled selected>Choose a preset…</option></select></label><button id="load">Load preset</button><label>Evenly spaced notches<input id="count" type="number" min="2" max="51" step="1" value="9"></label><label>Initial notch height (mm)<input id="initial-height" type="number" min="0" max="3" step="any" value="0.8"></label><button id="even">Create layout</button></div><p class="muted">Replaces the current layout. You can Undo. Height sets every barrier above a zero-height notch bottom. Zero gives flat travel. You can edit individual barriers afterward; dense patterns may need lower heights.</p></details>
+  <div id="notice" role="status" aria-live="polite"></div>
+  <div class="section-title"><h3>Lever travel</h3><span id="point-count" class="muted"></span></div>
+  <p class="muted">Select a dot or the ramp between two dots. The height is roller lift, not force or raw cut depth.</p>
+  <div id="travel" aria-label="Editable follower travel diagram"></div>
+  <div class="toolbar selection-tools"><button id="previous" aria-label="Select previous feature">←</button><label class="grow">Selected feature<select id="selection"></select></label><button id="next" aria-label="Select next feature">→</button></div>
+  <section id="inspector" aria-label="Selected feature controls"></section>
+  <div class="toolbar"><button id="insert">Insert point in span</button><button id="remove">Remove selected point</button></div>
+  <p class="muted small">Inserting a point adds a zero-slope junction and changes that ramp. Existing points stay in place. Undo is always available.</p>
+  <div id="shape-help-slot"></div>
+  <details id="advanced"><summary>Advanced points — all exact values</summary>
+   <p class="muted">This is the same design, with every point exposed. Switching views never regenerates it. Type is an annotation; coordinates create the geometry.</p>
+   <div class="table-scroll"><table><thead><tr><th>Point</th><th>Label</th><th>Angle °</th><th>Height mm</th><th>Type</th><th>Ramp to next</th></tr></thead><tbody id="nodes"></tbody></table></div>
+   <button id="sort">Sort by angle</button>
+  </details>
+  <details><summary>Mechanism and spring assumptions</summary><label>Extra preload assumption (mm)<input id="preload" data-global="assumed_extra_preload_mm" type="number" step="any" value="0"></label><p class="muted">Only changes the reported spring spacing, not hardware. Fixed interface: 8 mm disk, ±58° stops, 10 mm roller diameter. The generator allows −2 to 3 mm of height relative to baseline (negative values sit below it, for snap notches), not disk thickness. Profiles above the previous 1.4 mm design envelope need mechanical clearance and spring-compression checks; this is not a measured spring limit. Print counterbores upward.</p></details>
+  <details><summary>Engineering checks</summary><pre id="report"></pre></details>
  </details>
- <details><summary>Mechanism and spring assumptions</summary><label>Extra preload assumption (mm)<input id="preload" data-global="assumed_extra_preload_mm" type="number" step="any" value="0"></label><p class="muted">Only changes the reported spring spacing, not hardware. Fixed interface: 8 mm plate, ±58° stops, 10 mm roller diameter. The generator allows −2 to 3 mm of roller lift relative to baseline (negative values sit below it, for snap notches), not plate thickness. Profiles above the previous 1.4 mm design envelope need mechanical clearance and spring-compression checks; this is not a measured spring limit. Print counterbores upward.</p></details>
 </section>
-<section class="card preview-card">
- <div class="section-title"><h2>Notch plate</h2><button class="primary" id="generate">Generate files</button></div>
- <div id="status" role="status" aria-live="polite">Loading layout…</div>
- <div id="issues"></div><div id="preview-label" class="preview-label" hidden></div><div id="preview"></div><div id="downloads"></div>
- <p class="muted small">Preview updates while you edit. Generated files are made from the current valid design. Actual feel also depends on preload, friction and print fit.</p>
- <details><summary>Engineering checks</summary><pre id="report"></pre></details>
-</section>
-</div>
 </main>
 <script type="module" src="./editor.js"></script>
 </html>
