@@ -2,7 +2,7 @@ import {EditorModel,draftIssues,intervalForSelection,importDraft} from './model.
 import {evenlySpaced,ease,FIXED,SHAPES} from './engine.js';
 import './shape-help.js';
 import {notchRecipe,normalizeDesign,DEFAULT_DESIGN} from './recipe.js';
-import {stateOf,cycle,withCount,chipRefusal,countRefusal,viewOf,fileStem,statusText} from './simple.js';
+import {stateOf,cycle,withCount,chipRefusal,countRefusal,viewOf,fileStem,statusText,linkDesign,linkConfig} from './simple.js';
 const $=id=>document.getElementById(id),escape=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 let model=null,presets={},revision=0,timer=null,worker=null,lastValid=null,downloadUrls=[],issues=[],validatedRevision=null,checking=false,generating=false,focusAfter=null;
 const number=value=>value===''?'':Number(value);
@@ -191,5 +191,26 @@ $('load').onclick=()=>{if(!presets[$('preset').value]){$('notice').textContent='
 $('download').onclick=()=>{if(!model||validatedRevision!==revision)return;issues=draftIssues(model.config);if(issues.length){schedulePreview();return;}const stem=fileStem(model.config),token=invalidate();generating=true;renderSimple();$('status').className='';$('status').textContent='Checking the mesh and generating files…';stalePreview('Last valid preview — generating current files.');requestGeometry(true,token,stem);};
 $('save').onclick=()=>{if(!model)return;const url=URL.createObjectURL(new Blob([JSON.stringify(model.config,null,2)],{type:'application/json'})),a=document.createElement('a');a.href=url;a.download='notch-settings.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);$('notice').textContent='Saved the exact settings, including any incomplete draft values.';};
 $('import').onclick=()=>$('file').click();$('file').onchange=async()=>{const file=$('file').files[0];if(!file)return;try{if(file.size>2_000_000)throw Error('Settings file is too large (maximum 2 MB).');const c=importDraft(JSON.parse(await file.text()));action(()=>model.replace(c),'Loaded settings without simplifying them. Invalid values remain editable.');}catch(e){$('notice').textContent='Could not load settings: '+e.message;}finally{$('file').value='';}};
-model=new EditorModel({...notchRecipe(DEFAULT_DESIGN),design:DEFAULT_DESIGN});issues=draftIssues(model.config);renderAll();schedulePreview();
+// Start-up: the tested default, or a design from the link (?positions=…, see linkDesign in simple.js).
+function start(config,notice=''){model=new EditorModel(config);issues=draftIssues(model.config);renderAll();schedulePreview();if(notice)$('simple-notice').innerHTML=notice;}
+// Builds a config without a mesh in a throwaway worker; resolves {ok,raw,load}.
+function checkConfig(config){return new Promise(resolve=>{let w;
+ try{w=new Worker(new URL('./worker.js',import.meta.url),{type:'module'});}catch(e){resolve({ok:false,load:true,raw:e.message});return;}
+ w.onmessage=({data})=>{w.terminate();resolve({ok:data.ok,raw:data.ok?'':`${data.kind}: ${data.error}`});};
+ w.onerror=e=>{e.preventDefault?.();w.terminate();resolve({ok:false,load:true,raw:e.message||'The geometry worker failed to load or run.'});};
+ w.postMessage({config,generate:false});
+});}
+// A link's design is checked before it is shown. If its Deep positions don't fit, the same positions are tried all Standard.
+async function openLink(link){
+ const d=link.design,who=link.name?`“${escape(link.name)}”`:'this lever',opened=`<p>Opened ${who} from a link: ${d.count} positions.</p>`,first=linkConfig(link);
+ $('status').textContent='Checking the lever from your link…';
+ const r=await checkConfig(first);
+ if(r.ok||r.load||!d.deep.length){start(first,opened);return;}
+ const second=linkConfig(link,{...d,deep:[]}),r2=await checkConfig(second);
+ if(!r2.ok){start(first,opened);return;}
+ const names=d.deep.map(p=>link.labels?.[p-1]||`position ${p}`).join(', ');
+ start(second,`${opened}<p>Deep (${escape(names)}) doesn't fit with ${d.count} positions: the notches are too close for the roller to follow. Those positions are Standard instead. Fewer positions leave room for Deep.</p><details><summary>Details</summary><p class="raw">${escape(r.raw)}</p></details>`);
+}
+const link=linkDesign(location.search);
+if(link)openLink(link);else start({...notchRecipe(DEFAULT_DESIGN),design:DEFAULT_DESIGN});
 fetch('./presets.json').then(r=>{if(!r.ok)throw Error('HTTP '+r.status);return r.json()}).then(d=>{presets=d;for(const[k,c]of Object.entries(d))$('preset').add(new Option(c.name||k,k));}).catch(e=>{$('notice').textContent='Cannot load the preset list: '+e.message;});

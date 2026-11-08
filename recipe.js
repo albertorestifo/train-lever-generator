@@ -29,3 +29,10 @@ export function matchesRecipe(config){
  const r=notchRecipe(d).nodes;
  return r.length===config.nodes.length&&r.every((n,i)=>{const c=config.nodes[i];return c&&Math.abs(n.angle_deg-c.angle_deg)<=TOL&&Math.abs(n.lift_mm-c.lift_mm)<=TOL&&n.shape===c.shape});
 }
+// Names each notch node from a list of per-position labels (1-based positions, '' keeps the number).
+// The list is kept as position_labels so later Standard/Deep/Smooth edits at the same count can reapply it.
+export function withLabels(config,labels){
+ if(!Array.isArray(labels)||!config.design||labels.length!==config.design.count)return config;
+ const nodes=config.nodes.map(n=>{const i=n.kind==='gate'&&/^\d+$/.test(n.label)?Number(n.label):0,l=i?labels[i-1]:'';return l?{...n,label:l}:n});
+ return {...config,nodes,position_labels:[...labels]};
+}
