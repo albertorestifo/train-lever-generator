@@ -1,5 +1,5 @@
 // Pure state helpers for the simple Standard/Deep/Smooth view. Positions are 1-based.
-import {DEFAULT_DESIGN,normalizeDesign,matchesRecipe,notchRecipe,withLabels} from './recipe.js';
+import {DEFAULT_DESIGN,normalizeDesign,matchesRecipe,notchRecipe,withLabels,deepDepths} from './recipe.js';
 const WORD={standard:'Standard',deep:'Deep',smooth:'Smooth'},cap=s=>WORD[s];
 export const stateOf=(d,p)=>d.deep.includes(p)?'deep':d.smooth.includes(p)?'smooth':'standard';
 export function cycle(d,p){
@@ -20,7 +20,9 @@ const OK='✓ Ready to print. ';
 export function statusText(design){
  const d=normalizeDesign(design),def=normalizeDesign(DEFAULT_DESIGN);
  if(d&&JSON.stringify(d)===JSON.stringify(def))return OK+'This is the disk tested on the Class 323 lever.';
- return OK+'Uses the same Standard and Deep shapes as the tested disk, but only the 9-position disk has been tried on a real lever.'+(d&&d.smooth.length?' Smooth ranges have not been tried on a real lever.':'');
+ const shallow=d?deepDepths(d).filter(x=>x.depth<1.8):[];
+ const deepNote=shallow.length?` With ${d.count} positions the notches are close, so Deep is shallower here (${shallow.map(x=>`position ${x.position}: ${x.depth.toFixed(2)} mm`).join(', ')}, against 1.8 mm on the tested disk). It holds less than a full Deep and has not been tried on a real lever.`:'';
+ return OK+'Uses the same Standard and Deep shapes as the tested disk, but only the 9-position disk has been tried on a real lever.'+(d&&d.smooth.length?' Smooth ranges have not been tried on a real lever.':'')+deepNote;
 }
 // A design opened from a link, e.g. one Trenino builds from a calibrated lever:
 // ?positions=6&deep=1,3&smooth=2,4,5&label=Emergency&label=&label=Off&label=&label=&label=Power&name=BR430
