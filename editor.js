@@ -116,7 +116,7 @@ function renderSimple(){
  for(let p=1;d&&p<=d.count;p++){
   const s=stateOf(d,p);
   if(s==='smooth'){let q=p;while(q<d.count&&stateOf(d,q+1)==='smooth')q++;
-   html+=`<span class="smooth-run" role="group" aria-label="Smooth, no clicks: position${q>p?`s ${p} to ${q}`:` ${p}`}">`;
+   html+=`<span class="smooth-run" role="group" aria-label="Smooth range, walls at each end: position${q>p?`s ${p} to ${q}`:` ${p}`}">`;
    for(let i=p;i<=q;i++)html+=`<button class="smooth-pos" data-pos="${i}" aria-label="Position ${i}: Smooth. Tap to make it Standard"${dis}>${i}</button>`;
    html+='</span>';p=q;continue;}
   html+=`<button class="chip ${s}" data-pos="${p}" aria-label="Position ${p}: ${FEEL[s]}"${dis}>${p}${s==='deep'?'<small>Deep</small>':''}</button>`;

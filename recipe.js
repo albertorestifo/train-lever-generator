@@ -8,19 +8,30 @@ export function normalizeDesign(v){
  if(!deep||!smooth||smooth.some(x=>deep.includes(x)))return null;
  return {count:v.count,deep,smooth};
 }
+// A run of Smooth positions is a range: a flat floor at notch depth from its first to its last
+// position, with a wall at each end. The lever rests anywhere on the floor and has to be pushed
+// over a wall to leave. Each wall is an ordinary bump (same crest position and snap shapes), so
+// the range is a Standard notch whose floor is stretched flat. Walls are 1.2 mm, and 1.4 mm
+// beside a Deep end position (an emergency). A single Smooth position has no floor and feels
+// like a Standard notch.
 export function notchRecipe(design){
  const d=normalizeDesign(design);if(!d)throw Error('Invalid notch design');
- const {count:n}=d,p=116/(n-1),D=new Set(d.deep),S=new Set(d.smooth),a=i=>-58+(i-1)*p,deep=i=>D.has(i);
- const reach=i=>deep(i)?F*p:p/2,lift=i=>deep(i)?(i===1||i===n?-1.9:-1.8):0,nodes=[];
+ const {count:n}=d,p=116/(n-1),D=new Set(d.deep),S=new Set(d.smooth),a=i=>-58+(i-1)*p,deep=i=>D.has(i),end=i=>i===1||i===n;
+ const lift=i=>deep(i)?(end(i)?-1.9:-1.8):0,nodes=[];
+ // Crest between neighbouring positions i<j: midpoint, or F·p from the Deep one.
+ const crest=(i,j)=>deep(i)===deep(j)?(a(i)+a(j))/2:deep(i)?a(i)+F*p:a(j)-F*p;
+ const wall=i=>deep(i)&&end(i)?1.4:1.2;
  const notches=[];for(let i=1;i<=n;i++)if(!S.has(i))notches.push(i);
  notches.forEach((i,k)=>{
   nodes.push({angle_deg:a(i),lift_mm:lift(i),kind:'gate',label:String(i),shape:'snap_up'});
   if(k===notches.length-1)return;
-  const j=notches[k+1],h=deep(i)||deep(j)?1.4:1.2;
-  if(j===i+1)nodes.push({angle_deg:deep(i)===deep(j)?(a(i)+a(j))/2:deep(i)?a(i)+F*p:a(j)-F*p,lift_mm:h,kind:'crest',label:'',shape:'snap_down'});
-  else{const s=a(i)+reach(i),e=a(j)-reach(j);
-   if(e-s<0.5)throw Error('Smooth run between positions '+i+' and '+j+' leaves no plateau');
-   nodes.push({angle_deg:s,lift_mm:h,kind:'flat',label:'',shape:'cosine'},{angle_deg:e,lift_mm:h,kind:'flat',label:'',shape:'snap_down'});}
+  const j=notches[k+1];
+  if(j===i+1){nodes.push({angle_deg:crest(i,j),lift_mm:deep(i)||deep(j)?1.4:1.2,kind:'crest',label:'',shape:'snap_down'});return;}
+  const s=i+1,e=j-1;
+  nodes.push({angle_deg:crest(i,s),lift_mm:wall(i),kind:'crest',label:'',shape:'snap_down'});
+  if(e>s)nodes.push({angle_deg:a(s),lift_mm:0,kind:'flat',label:'',shape:'cosine'});
+  nodes.push({angle_deg:a(e),lift_mm:0,kind:'flat',label:'',shape:'snap_up'});
+  nodes.push({angle_deg:crest(e,j),lift_mm:wall(j),kind:'crest',label:'',shape:'snap_down'});
  });
  return {name:n+' positions',assumed_extra_preload_mm:0,nodes};
 }
