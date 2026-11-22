@@ -6,7 +6,27 @@ export function normalizeDesign(v){
  if(!v||typeof v!=='object'||!Number.isInteger(v.count)||v.count<2||v.count>13)return null;
  const deep=ints(v.deep,1,v.count),smooth=ints(v.smooth,2,v.count-1);
  if(!deep||!smooth||smooth.some(x=>deep.includes(x)))return null;
- return {count:v.count,deep,smooth};
+ const spring=springs(v.spring,v.count,deep,smooth);if(!spring)return null;
+ return spring.length?{count:v.count,deep,smooth,spring}:{count:v.count,deep,smooth};
+}
+// Spring-back positions: [[position, target], …], 1-based. The lever returns to `target` when
+// released from `position`. A target is a plain resting position (not Deep, Smooth or itself
+// springing back), and every position between a spring position and its target springs back to
+// the same target, so each target with its spring positions forms one valley. Spring designs
+// don't mix with Smooth ranges.
+function springs(v,n,deep,smooth){
+ if(v===undefined||(Array.isArray(v)&&v.length===0))return [];
+ if(!Array.isArray(v)||smooth.length)return null;
+ const pairs=[],to=new Map();
+ for(const x of v){
+  if(!Array.isArray(x)||x.length!==2||!x.every(y=>Number.isInteger(y)&&y>=1&&y<=n))return null;
+  const [p,t]=x;if(p===t||to.has(p)||deep.includes(p))return null;to.set(p,t);pairs.push([p,t]);
+ }
+ for(const [p,t] of pairs){
+  if(to.has(t)||deep.includes(t))return null;
+  for(let q=Math.min(p,t)+1;q<Math.max(p,t);q++)if(to.get(q)!==t)return null;
+ }
+ return pairs.sort((a,b)=>a[0]-b[0]);
 }
 // A run of Smooth positions is a range: a flat floor at notch depth from its first to its last
 // position, with a wall at each end. The lever rests anywhere on the floor and has to be pushed
@@ -56,8 +76,85 @@ function deepDeep(G){
  if(G>=TESTED_DD-TOL)return {depth:1.9,ridge:1.4};
  const r=row(DD,G);return r?{depth:r[1],ridge:r[2]}:{depth:0,ridge:standardBump(G)};
 }
+// Spring-back valleys. A target and its spring positions form a valley: the target is the floor,
+// and each spring position is a band on a flank that rises to a crest. Released anywhere on a
+// flank, the roller slides back to the floor, like a Standard notch's flank but wide. Nothing sits
+// on a flank (the engine gives every node zero slope, which would be a resting point), so the
+// spring positions are angles only. Flanks use the tested snap shapes from the floor: steep just
+// off the floor (a strong return at the centre) and rounding gently into the crest, which the
+// roller must be able to follow.
+//
+// Bands are SPRING_BAND° wide and the crest sits SPRING_APPROACH° past the outermost band, so the
+// bands stay on the steep part of the flank. A flank rises at SPRING_SLOPE mm/rad on average,
+// keeping the outer band edge near the tested Standard flank (1.2 mm over 7.25°, ~9.5 mm/rad);
+// at the lift limit it may fall to SPRING_SLOPE_MIN, still above that.
+// The floor drops below 0 only when a crest would pass the 3 mm lift limit, and never below the
+// tested Deep depth. Inside a valley, positions are a band apart; the rest of the travel is shared
+// evenly by the other gaps. Two valleys whose spring positions face each other share one crest,
+// since a low point between them would be a place the lever stays. None of this has been printed.
+const SPRING_BAND=7,SPRING_APPROACH=6,SPRING_SLOPE=12,SPRING_SLOPE_MIN=10,SPRING_FLOOR_MIN=-1.9,LIFT_MAX=3,SPRING_DESCENT=6;
+export const SPRING_ALL_ONE='Every position springs back to the same one, so the valley would span the whole travel and be too shallow to spring back. A spring-centred lever without a notch disk suits it better.';
+function springRecipe(d){
+ const {count:n}=d,to=new Map(d.spring),target=p=>to.get(p)??p,spring=p=>to.has(p);
+ const valley=(i,j)=>target(i)===target(j);
+ let fixed=0,free=0;for(let i=1;i<n;i++)valley(i,i+1)?fixed+=SPRING_BAND:free++;
+ if(!free)throw Error(SPRING_ALL_ONE);
+ // An end spring position gets half a band before the stop, so its band ends at the stop.
+ const pad=p=>spring(p)?SPRING_BAND/2:0,G=(116-pad(1)-pad(n)-fixed)/free;
+ const angle=[null,-58+pad(1)];for(let i=1;i<n;i++)angle.push(angle[i]+(valley(i,i+1)?SPRING_BAND:G));
+ const centres=[];for(let i=1;i<=n;i++)if(!spring(i))centres.push(i);
+ const run=(c,dir)=>{let k=0;for(let q=c+dir;q>=1&&q<=n&&to.get(q)===c;q+=dir)k++;return k};
+ const deep=i=>d.deep.includes(i);
+ // Where each flank ends: at the stop for an end valley, halfway across a shared gap, or past its
+ // outermost band otherwise; a flank's rise follows from its length.
+ const flankEnd=(c,dir)=>{
+  const k=run(c,dir),last=c+dir*k,next=last+dir;
+  if(next<1||next>n)return {angle:dir<0?-58:58,shared:false};
+  if(spring(next))return {angle:(angle[last]+angle[next])/2,shared:true};
+  return {angle:angle[last]+dir*(SPRING_BAND/2+SPRING_APPROACH),shared:false};
+ };
+ const rise=(c,end)=>SPRING_SLOPE*Math.abs(end-angle[c])*rad;
+ const floor=new Map(),crestLift=new Map();
+ for(const c of centres){
+  const sides=[-1,1].filter(dir=>run(c,dir)).map(dir=>flankEnd(c,dir));
+  if(!sides.length)continue;
+  // Aim for SPRING_SLOPE; within the lift range a flank may fall to SPRING_SLOPE_MIN, still above
+  // the tested Standard flank, and no further.
+  const top=Math.max(...sides.map(s=>rise(c,s.angle))),f=Math.round(Math.max(SPRING_FLOOR_MIN,Math.min(0,LIFT_MAX-top))*100)/100;
+  floor.set(c,f);
+  for(const s of sides){
+   const key=s.angle.toFixed(6),h=Math.round(Math.min(LIFT_MAX,f+rise(c,s.angle))*100)/100;
+   if((h-f)/(Math.abs(s.angle-angle[c])*rad)<SPRING_SLOPE_MIN-TOL)
+    throw Error(`Position ${c} has too many positions springing back to it: its flank would be too shallow to spring back within the ${LIFT_MAX-SPRING_FLOOR_MIN} mm of lift.`);
+   crestLift.set(key,Math.max(crestLift.get(key)??-Infinity,h));
+  }
+ }
+ // A plain resting position between two plain ones keeps the Standard/Deep rules on its real gaps.
+ const plainDepth=i=>{if(!deep(i))return 0;let v=i===1||i===n?1.9:1.8;
+  for(const j of [i-1,i+1])if(j>=1&&j<=n)v=Math.min(v,deepStandard(Math.abs(angle[j]-angle[i]),i===1||i===n).depth);
+  return Math.round(v*100)/100};
+ const nodes=[],crest=(a)=>nodes.push({angle_deg:a,lift_mm:crestLift.get(a.toFixed(6)),kind:'crest',label:'',shape:'snap_down'});
+ centres.forEach((c,k)=>{
+  const left=run(c,-1),right=run(c,1);
+  if(left){const e=flankEnd(c,-1);if(!e.shared)crest(e.angle)}
+  nodes.push({angle_deg:angle[c],lift_mm:floor.has(c)?floor.get(c):-plainDepth(c),kind:'gate',label:String(c),shape:'snap_up'});
+  if(right){const e=flankEnd(c,1);crest(e.angle);return}
+  const next=centres[k+1];if(next===undefined||run(next,-1))return;
+  // Two plain resting positions: the usual bump between them.
+  const G2=angle[next]-angle[c];
+  if(!deep(c)&&!deep(next)){nodes.push({angle_deg:(angle[c]+angle[next])/2,lift_mm:standardBump(G2),kind:'crest',label:'',shape:'snap_down'});return}
+  const di=deep(c)?c:next,other=di===c?next:c,r=deepStandard(G2,di===1||di===n);
+  nodes.push({angle_deg:angle[di]+Math.sign(angle[other]-angle[di])*r.f*G2,lift_mm:r.bump,kind:'crest',label:'',shape:'snap_down'});
+ });
+ // A crest must leave room to climb from, and drop into, the resting position beside it.
+ for(let i=0;i+1<nodes.length;i++){const [a,b]=[nodes[i],nodes[i+1]];
+  if(a.kind!==b.kind&&b.angle_deg-a.angle_deg<SPRING_DESCENT-TOL)
+   throw Error('Too many positions for the travel: a spring-back flank leaves no room beside the next position.')}
+ return {name:n+' positions',assumed_extra_preload_mm:0,nodes};
+}
 export function notchRecipe(design){
  const d=normalizeDesign(design);if(!d)throw Error('Invalid notch design');
+ if(d.spring)return springRecipe(d);
  const {count:n}=d,p=116/(n-1),D=new Set(d.deep),S=new Set(d.smooth),a=i=>-58+(i-1)*p,deep=i=>D.has(i),end=i=>i===1||i===n;
  const notches=[];for(let i=1;i<=n;i++)if(!S.has(i))notches.push(i);
  // The other side of each gap from notch i: the next notch, or the end of a floor.

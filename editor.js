@@ -2,7 +2,7 @@ import {EditorModel,draftIssues,intervalForSelection,importDraft} from './model.
 import {evenlySpaced,ease,FIXED,SHAPES} from './engine.js';
 import './shape-help.js';
 import {notchRecipe,normalizeDesign,DEFAULT_DESIGN} from './recipe.js';
-import {stateOf,cycle,withCount,chipRefusal,countRefusal,viewOf,fileStem,statusText,linkDesign,linkConfig} from './simple.js';
+import {stateOf,cycle,withCount,chipRefusal,targetRefusal,springTarget,countRefusal,viewOf,fileStem,statusText,linkDesign,linkConfig} from './simple.js';
 const $=id=>document.getElementById(id),escape=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 let model=null,presets={},revision=0,timer=null,worker=null,lastValid=null,downloadUrls=[],issues=[],validatedRevision=null,checking=false,generating=false,focusAfter=null;
 const number=value=>value===''?'':Number(value);
@@ -105,7 +105,7 @@ function requestGeometry(generate,token,stem='notch-disk-custom'){
  active.postMessage({config:structuredClone(model.config),generate,fileStem:stem});
 }
 // Simple view: chips and stepper are a view of model.config; every change goes through EditorModel.
-const FEEL={standard:'Standard',deep:'Deep',smooth:'Smooth'};
+const FEEL={standard:'Standard',deep:'Deep',smooth:'Smooth',spring:'Springs back'};
 function renderSimple(){
  if(!model)return;
  const v=viewOf(model.config),d=v.design,fine=v.mode!=='simple',dis=fine||checking||generating?' disabled':'';
@@ -119,6 +119,7 @@ function renderSimple(){
    html+=`<span class="smooth-run" role="group" aria-label="Smooth range, walls at each end: position${q>p?`s ${p} to ${q}`:` ${p}`}">`;
    for(let i=p;i<=q;i++)html+=`<button class="smooth-pos" data-pos="${i}" aria-label="Position ${i}: Smooth. Tap to make it Standard"${dis}>${i}</button>`;
    html+='</span>';p=q;continue;}
+  if(s==='spring'){const t=springTarget(d,p);html+=`<button class="chip spring" data-pos="${p}" aria-label="Position ${p}: springs back to ${t}. Tap to make it Standard"${dis}>${p}<small>↩${t}</small></button>`;continue;}
   html+=`<button class="chip ${s}" data-pos="${p}" aria-label="Position ${p}: ${FEEL[s]}"${dis}>${p}${s==='deep'?'<small>Deep</small>':''}</button>`;
  }
  $('chips').innerHTML=html;
@@ -154,11 +155,13 @@ function applyDefault(){model.endGroup();model.applyDesign(DEFAULT_DESIGN);chang
 $('chips').addEventListener('click',e=>{
  const b=e.target.closest('[data-pos]');if(!b||b.disabled||checking||generating||!model)return;
  const v=viewOf(model.config);if(v.mode!=='simple')return;
- const pos=Number(b.dataset.pos),{design,next}=cycle(v.design,pos),end=pos===1||pos===v.design.count;
+ const pos=Number(b.dataset.pos),tap=cycle(v.design,pos);
+ if(!tap){refuse(targetRefusal(pos),'');return;}
+ const {design,next}=tap,end=pos===1||pos===v.design.count;
  focusAfter=()=>$('chips').querySelector(`[data-pos="${pos}"]`);
  // A refused tap tries the state after it (ends have only two states, so no fallback there).
  const fb=end?null:cycle(design,pos);
- checkDesign(design,chipRefusal(pos,next,v.design.count),null,'',fb&&fb.design,fb?` It is now ${FEEL[fb.next]}.`:'');
+ checkDesign(design,chipRefusal(pos,next,v.design.count,v.design),null,'',fb&&fb.design,fb?` It is now ${FEEL[fb.next]}.`:'');
 });
 function step(delta){
  if(!model||checking||generating)return;const v=viewOf(model.config);if(v.mode!=='simple')return;
