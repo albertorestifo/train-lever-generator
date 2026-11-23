@@ -1,4 +1,4 @@
-import {FIXED,SHAPES,liftLimit,validProfile} from './engine.js';
+import {FIXED,SHAPES,liftFloor,validProfile} from './engine.js';
 import {notchRecipe,withLabels} from './recipe.js';
 // One lossless configuration serves both the guided and advanced editor.
 const clone=value=>structuredClone(value);
@@ -11,11 +11,11 @@ export function intervalForSelection(selection,count){return count<2?null:Math.m
 export function draftIssues(config){
  const n=config.nodes,issues=[],add=(message,indices=[])=>issues.push({message,indices});
  if(n.length<3||n.length>101)add('Use 3–101 points.');
- const top=liftLimit(config);
+ const floor=liftFloor(config);
  n.forEach((p,i)=>{
   if(!Number.isFinite(p.angle_deg))add(`Point ${i+1}: complete its angle.`,[i]);
   if(!Number.isFinite(p.lift_mm))add(`Point ${i+1}: complete its lift.`,[i]);
-  else if(p.lift_mm<FIXED.min_lift_mm||p.lift_mm>top)add(`Point ${i+1}: roller lift must be ${FIXED.min_lift_mm}–${top} mm.`,[i]);
+  else if(p.lift_mm<floor||p.lift_mm>FIXED.max_lift_mm)add(`Point ${i+1}: roller lift must be ${floor}–${FIXED.max_lift_mm} mm.`,[i]);
   if(p.shape==='profile'?!validProfile(p.profile):!SHAPES.includes(p.shape??'cosine'))add(`Point ${i+1}: choose a supported outgoing ramp shape.`,[i]);
   if(i&&Number.isFinite(p.angle_deg)&&Number.isFinite(n[i-1].angle_deg)&&p.angle_deg-n[i-1].angle_deg<.5)add(`Between points ${i} and ${i+1}: keep increasing angles at least 0.5° apart.`,[i-1,i]);
  });

@@ -86,16 +86,18 @@ function deepDeep(G){
 //
 // Physical limits, all real: the 5 mm roller cannot follow a convex pitch curve tighter than about
 // 5.5 mm, so a top rounds off at CURVE_MAX mm/rad²; the pressure angle stays at or under 35°, which
-// caps slopes near WALL_SLOPE; the floor stays at SPRING_FLOOR so the follower spring keeps contact.
-// The top is SPRING_TOP: the test disk's 2.2 mm crest left over 1 cm of free follower travel, so
-// these designs raise the lift limit (lift_limit_mm). Where a gap is too short for the full wall,
-// the top comes down until the flank and its descent fit; a flank whose spring zone would fall
-// below SPRING_SLOPE_MIN is refused. A spring run that ends at a stop rises at SPRING_SLOPE into it.
+// caps slopes near WALL_SLOPE. Tops stop at SPRING_TOP: 6 mm tops hit the P13 spring block (corner
+// 50.36 mm from the shaft), the 2.2 mm test disk cleared it at 50.20. So the lift comes from below:
+// floors at SPRING_FLOOR, with lift_floor_mm on the config. There the follower still clears P33/P01S
+// and P32 (about 2.9 and 4.1 mm left at -1.9 mm) and the reference spring keeps contact to about
+// -5.3 mm, more with preload. Beside a plain bump a floor is only as deep as springDepthCap allows.
+// Where a gap is too short for the full wall, the top comes down until the flank and its descent
+// fit; a flank whose spring zone would fall below SPRING_SLOPE_MIN is refused. A spring run that ends at a stop rises at SPRING_SLOPE into it.
 // Inside a valley, positions are a band apart; other gaps share the rest of the travel. Two valleys
 // whose spring positions face each other meet at one shared top.
-const SPRING_BAND=7,ZONE_PAST=1,SPRING_FLOOR=1.9,SPRING_TOP=6,TOP_MIN=2.2,CURVE_MAX=400,RAMP=1,KNEE=0.8,WALL_MIN=0.5;
-const SPRING_SLOPE=18,SPRING_SLOPE_MIN=10,WALL_SLOPE=32,DESCENT_SLOPE=32,DESCENT_TAIL=4,GATE_RAMP=1.5,WALL_GATE=1.5;
-export const SPRING_LIFT_LIMIT=SPRING_TOP;
+const SPRING_BAND=7,ZONE_PAST=1,SPRING_FLOOR=4,SPRING_TOP=2.2,TOP_MIN=1.2,CURVE_MAX=400,RAMP=1,KNEE=0.8,WALL_MIN=0.5;
+const SPRING_SLOPE=18,SPRING_SLOPE_MIN=10,WALL_SLOPE=30,DESCENT_SLOPE=30,DESCENT_TAIL=4,GATE_RAMP=1.5,WALL_GATE=3.5;
+export const SPRING_LIFT_FLOOR=-SPRING_FLOOR;
 export const SPRING_ALL_ONE='Every position springs back to the same one, so the valley would span the whole travel and be too shallow to spring back. A spring-centred lever without a notch disk suits it better.';
 const round2=v=>Math.round(v*100)/100,topWidth=s=>s/CURVE_MAX/rad;
 // A flank from a floor up a wall to a top `rise` higher. Knots: [distance from the floor (deg),
@@ -140,6 +142,11 @@ function profile(knots,span,fromStart){
  return p.map(([u,s],i)=>[i===0?0:i===p.length-1?1:Math.min(1,Math.max(0,Math.round(u*1e6)/1e6)),Math.round(s*1000)/1000]);
 }
 const TOO_MANY='Too many positions for the travel: a spring-back flank leaves no room beside the next position.';
+// How deep a spring floor or a wall's landing can be beside a plain bump across gap G: as deep
+// as the bump's snap flank allows at the tested Deep flank slope (3.2 mm over 9°, 20.4 mm/rad),
+// and never shallower than a Deep there.
+const DEEP_FLANK=20.4;
+function springDepthCap(G,atEnd){const r=deepStandard(G,atEnd);return Math.max(r.depth,Math.floor((DEEP_FLANK*r.f*G*rad-r.bump)*100)/100)}
 function springRecipe(d){
  const {count:n}=d,to=new Map(d.spring),target=p=>to.get(p)??p,spring=p=>to.has(p),deep=i=>d.deep.includes(i),end=i=>i===1||i===n;
  const valley=(i,j)=>target(i)===target(j);
@@ -158,7 +165,7 @@ function springRecipe(d){
  for(const c of centres){
   const floor=run(c,-1)||run(c,1),wallSide=(c>1&&spring(c-1))||(c<n&&spring(c+1));
   let v=floor?SPRING_FLOOR:deep(c)?(end(c)?1.9:1.8):wallSide?WALL_GATE:0;
-  if(v)for(const dir of [-1,1]){const j=plainNext(c,dir);if(j)v=Math.min(v,deepStandard(Math.abs(angle[j]-angle[c]),end(c)).depth)}
+  if(v)for(const dir of [-1,1]){const j=plainNext(c,dir);if(j)v=Math.min(v,deep(c)?deepStandard(Math.abs(angle[j]-angle[c]),end(c)).depth:springDepthCap(Math.abs(angle[j]-angle[c]),end(c)))}
   lift.set(c,-round2(v));
  }
  const lowered=i=>lift.get(i)<0;
@@ -217,7 +224,7 @@ function springRecipe(d){
   if(node.shape==='profile')node.profile=profile(pending.knots,pts[i+1].angle_deg-p.angle_deg,pending.fromStart);
   return node});
  for(let i=0;i+1<nodes.length;i++)if(nodes[i+1].angle_deg-nodes[i].angle_deg<0.5)throw Error(TOO_MANY);
- return {name:n+' positions',assumed_extra_preload_mm:0,lift_limit_mm:SPRING_LIFT_LIMIT,nodes};
+ return {name:n+' positions',assumed_extra_preload_mm:0,lift_floor_mm:SPRING_LIFT_FLOOR,nodes};
 }
 export function notchRecipe(design){
  const d=normalizeDesign(design);if(!d)throw Error('Invalid notch design');
