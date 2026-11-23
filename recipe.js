@@ -78,63 +78,96 @@ function deepDeep(G){
 }
 // Spring-back valleys. A target and its spring positions form a valley: the target is the floor,
 // and each spring position sits on a flank. Released anywhere on a flank, the roller slides back
-// to the floor. A flank that leads to another position ends in a wall: the spring zone rises at a
-// steady SPRING_SLOPE, then the slope jumps to WALL_SLOPE (the "strong" wall chosen on the printed
-// test disk, 23 November 2026) and climbs to SPRING_TOP, so there is a clear point to push past.
-// Over the rounded top the roller drops steeply (DESCENT_SLOPE) into the next position, which sits
-// at WALL_GATE below zero so it catches the lever; a long descent eases off to DESCENT_TAIL.
+// to the floor. A flank that leads to another position ends in a wall: the spring zone pushes back
+// with a steady SPRING_TORQUE, then within KNEE the slope jumps to SLOPE_CAP and climbs to
+// SPRING_TOP, at least doubling the push, so there is a clear point to push past. Over the rounded
+// top the roller is pushed steadily all the way down into the next position, which sits at
+// WALL_GATE below zero so it catches the lever.
+//
+// Why steady push and not steady slope (24 November 2026): the -4 mm floors with steady slopes
+// left the spring almost slack near the floor (0.7 mm compressed), so the lever stopped short of
+// its target, and descents that eased off to 4 mm/rad left the brake positions without a detent.
 //
 // Physical limits, all real: the 5 mm roller cannot follow a convex pitch curve tighter than about
 // 5.5 mm, so a top rounds off at CURVE_MAX mm/rad²; the pressure angle stays at or under 35°, which
-// caps slopes near WALL_SLOPE. Tops stop at SPRING_TOP: 6 mm tops hit the P13 spring block (corner
-// 50.36 mm from the shaft), the 2.2 mm test disk cleared it at 50.20. So the lift comes from below:
-// floors at SPRING_FLOOR, with lift_floor_mm on the config. There the follower still clears P33/P01S
-// and P32 (about 2.9 and 4.1 mm left at -1.9 mm) and the reference spring keeps contact to about
-// -5.3 mm, more with preload. Beside a plain bump a floor is only as deep as springDepthCap allows.
-// Where a gap is too short for the full wall, the top comes down until the flank and its descent
-// fit; a flank whose spring zone would fall below SPRING_SLOPE_MIN is refused. A spring run that ends at a stop rises at SPRING_SLOPE into it.
-// Inside a valley, positions are a band apart; other gaps share the rest of the travel. Two valleys
-// whose spring positions face each other meet at one shared top.
-const SPRING_BAND=7,ZONE_PAST=1,SPRING_FLOOR=4,SPRING_TOP=2.2,TOP_MIN=1.2,CURVE_MAX=400,RAMP=1,KNEE=0.8,WALL_MIN=0.5;
-const SPRING_SLOPE=18,SPRING_SLOPE_MIN=10,WALL_SLOPE=30,DESCENT_SLOPE=30,DESCENT_TAIL=4,GATE_RAMP=1.5,WALL_GATE=3.5;
+// caps slopes at SLOPE_CAP. Tops stop at SPRING_TOP: 6 mm tops hit the P13 spring block (corner
+// 50.36 mm from the shaft), the 2.2 mm test disk cleared it at 50.20. Floors at SPRING_FLOOR, with
+// lift_floor_mm on the config; the follower clears P33/P01S and P32 to about -4 mm. Beside a plain
+// bump a floor is only as deep as springDepthCap allows. Where a gap is too short for the full
+// wall, the top comes down until the flank and its descent fit; a flank whose spring zone would
+// push below SPRING_TORQUE_MIN is refused. A spring run that ends at a stop rises into it with the
+// same push.
+// Inside a valley, positions are a band apart; other gaps share the rest of the travel, but a gap
+// with a wall is at most WALL_GAP wide so its descent keeps pushing. Two valleys whose spring
+// positions face each other meet at one shared top.
+const SPRING_BAND=7,ZONE_PAST=1,SPRING_FLOOR=2.5,SPRING_TOP=2.2,TOP_MIN=1.2,CURVE_MAX=400,RAMP=1,KNEE=0.4,WALL_MIN=0.5;
+const SLOPE_CAP=30,SPRING_TORQUE=42,SPRING_TORQUE_MIN=24,GATE_RAMP=1.5,WALL_GATE=2.5,WALL_GAP=35;
 export const SPRING_LIFT_FLOOR=-SPRING_FLOOR;
 export const SPRING_ALL_ONE='Every position springs back to the same one, so the valley would span the whole travel and be too shallow to spring back. A spring-centred lever without a notch disk suits it better.';
 const round2=v=>Math.round(v*100)/100,topWidth=s=>s/CURVE_MAX/rad;
-// A flank from a floor up a wall to a top `rise` higher. Knots: [distance from the floor (deg),
-// slope (mm/rad)]. With width W the flank must end exactly there (a shared top).
-function wallFlank(rise,Lmin,W){
- const r=topWidth(WALL_SLOPE),s2=WALL_SLOPE,fixedLift=s2*KNEE/2*rad+s2*s2/(2*CURVE_MAX);
- const make=(s1,L,w)=>({width:L+KNEE+w+r,s1,knots:[[0,0],[RAMP,s1],[L,s1],[L+KNEE,s2],[L+KNEE+w,s2],[L+KNEE+w+r,0]]});
- const s1Lift=L=>(L-RAMP/2+KNEE/2)*rad;
+// Feel proxy: the reference spring is compressed about 3 + 0.57·lift mm (20 mm free, 17 mm at lift
+// 0), so the push on the lever goes with FORCE(lift)·slope. Spring zones and descents keep that
+// product (the "torque", T) steady instead of the slope, so a deep floor gets a steeper slope where
+// the spring is weak. Slopes stop at SLOPE_CAP for the 35° pressure angle.
+const FORCE=h=>Math.max(0.5,3+0.57*h);
+const area=k=>{let a=0;for(let i=1;i<k.length;i++)a+=(k[i][1]+k[i-1][1])/2*(k[i][0]-k[i-1][0]);return a*rad};
+// Lift along a run of `len` degrees from h0 whose slope is slope(x,h), rising (sign 1) or falling.
+function trace(h0,len,slope,sign){
+ const N=Math.max(40,Math.ceil(len/0.05)),dx=len/N,H=[h0];let h=h0;
+ for(let i=0;i<N;i++){const x=i*dx,hm=h+sign*slope(x,h)*dx*rad/2;h+=sign*slope(x+dx/2,hm)*dx*rad;H.push(h)}
+ return x=>{const t=Math.min(N,Math.max(0,x/dx)),i=Math.min(N-1,Math.floor(t));return H[i]+(H[i+1]-H[i])*(t-i)};
+}
+const steady=(T,h)=>Math.min(SLOPE_CAP,T/FORCE(h));
+// A spring zone from a floor at h0: the slope ramps up over RAMP, then pushes back with torque T.
+function zoneKnots(h0,T,L){
+ const slope=(x,h)=>Math.min(1,x/RAMP)*steady(T,h),H=trace(h0,L,slope,1);
+ const xs=[0,RAMP,...[1,2,3].map(k=>RAMP+(L-RAMP)*k/4),L];
+ return xs.map(x=>[x,slope(x,H(x))]);
+}
+const bisect=(f,lo,hi)=>{for(let i=0;i<60;i++){const m=(lo+hi)/2;f(m)?hi=m:lo=m}return hi};
+// A flank from a floor at h0 up a wall to a top `rise` higher: the spring zone, a sharp knee, the
+// wall at SLOPE_CAP and a rounded top. Knots: [distance from the floor (deg), slope (mm/rad)]. With
+// width W the flank must end exactly there (a shared top). Where the rise is too small for the full
+// zone and a WALL_MIN wall, the zone's torque comes down, to SPRING_TORQUE_MIN at least.
+function wallFlank(h0,rise,Lmin,W,T0=SPRING_TORQUE){
+ const r=topWidth(SLOPE_CAP);
+ const make=(T,L,w)=>({width:L+KNEE+w+r,T,knots:[...zoneKnots(h0,T,L),[L+KNEE,SLOPE_CAP],[L+KNEE+w,SLOPE_CAP],[L+KNEE+w+r,0]]});
+ const lower=L=>{
+  const T=bisect(t=>area(make(t,L,WALL_MIN).knots)>=rise,0,T0);
+  return T>=SPRING_TORQUE_MIN?make(T,L,WALL_MIN):null;
+ };
  if(W===undefined){
-  const w=(rise-fixedLift-SPRING_SLOPE*s1Lift(Lmin))/(s2*rad);
-  if(w>=WALL_MIN)return make(SPRING_SLOPE,Lmin,w);
-  const s1=(rise-fixedLift-s2*WALL_MIN*rad)/s1Lift(Lmin);
-  return s1>=SPRING_SLOPE_MIN&&s1<=SPRING_SLOPE?make(s1,Lmin,WALL_MIN):null;
+  const w=(rise-area(make(T0,Lmin,0).knots))/(SLOPE_CAP*rad);
+  return w>=WALL_MIN?make(T0,Lmin,w):lower(Lmin);
  }
- // Fixed width: L=W-KNEE-w-r. Solve w with s1=SPRING_SLOPE, else keep the shortest wall and solve s1.
- const w=(rise-fixedLift-SPRING_SLOPE*(W-KNEE-r-RAMP/2+KNEE/2)*rad)/((s2-SPRING_SLOPE)*rad);
- if(w>=WALL_MIN&&W-KNEE-w-r>=Lmin-TOL)return make(SPRING_SLOPE,W-KNEE-w-r,w);
- const L=W-KNEE-WALL_MIN-r;if(L<Lmin-TOL)return null;
- const s1=(rise-fixedLift-s2*WALL_MIN*rad)/s1Lift(L);
- return s1>=SPRING_SLOPE_MIN&&s1<=SPRING_SLOPE?make(s1,L,WALL_MIN):null;
+ const wmax=W-KNEE-r-Lmin;if(wmax<WALL_MIN-TOL)return null;
+ const at=w=>make(T0,W-KNEE-w-r,w);
+ if(area(at(WALL_MIN).knots)>=rise)return lower(W-KNEE-WALL_MIN-r);
+ if(area(at(wmax).knots)<rise-TOL)return null;
+ return at(bisect(w=>area(at(w).knots)>=rise,WALL_MIN,wmax));
 }
-// From a top down `drop` over D degrees into a gate: steep first, then easing off if there is room.
-const descentWidth=(s,drop)=>drop/(s*rad)+topWidth(s)/2+GATE_RAMP/2;
-function descent(drop,D){
- if(descentWidth(DESCENT_SLOPE,drop)>D+TOL)return null;
- const s=DESCENT_SLOPE,r=topWidth(s),sg=DESCENT_TAIL;
- // Where the slope eases from s to sg; a single slope if the span is too short for that.
- const x1=(drop/rad-s*(KNEE/2-r/2)-sg*(D-KNEE/2-GATE_RAMP/2))/(s-sg);
- if(x1>=r&&x1+KNEE<=D-GATE_RAMP)return [[0,0],[r,s],[x1,s],[x1+KNEE,sg],[D-GATE_RAMP,sg],[D,0]];
- let lo=sg,hi=s;for(let i=0;i<60;i++){const m=(lo+hi)/2;descentWidth(m,drop)>D?lo=m:hi=m}
- const t=hi,rt=topWidth(t);return [[0,0],[rt,t],[D-GATE_RAMP,t],[D,0]];
+// From a top down to a gate over D degrees: a rounded top, then a steady push toward the gate, all
+// the way down, so the lever is carried into the position. The torque is whatever fills D.
+function descent(top,gate,D){
+ const make=T=>{
+  const s0=steady(T,top),r=topWidth(s0),end=D-GATE_RAMP;if(end<=r)return null;
+  const slope=(x,h)=>(x<r?x/r:1)*steady(T,h),H=trace(top,end,slope,-1);
+  const xs=[0,r,...[1,2,3,4].map(k=>r+(end-r)*k/5),end];
+  return [...xs.map(x=>[x,slope(x,H(x))]),[D,0]];
+ };
+ const need=top-gate,steep=make(1e4);
+ if(!steep||area(steep)<need-TOL)return null;
+ return make(bisect(T=>{const k=make(T);return k&&area(k)>=need},0,1e4));
 }
-// A spring run ending at a stop: SPRING_SLOPE up to the stop, rounded off there.
-function stopFlank(maxRise,len){
- const rise=S=>S*(len-RAMP/2-topWidth(S)/2)*rad;let S=SPRING_SLOPE;
- if(rise(S)>maxRise){let lo=0,hi=S;for(let i=0;i<60;i++){const m=(lo+hi)/2;rise(m)>maxRise?hi=m:lo=m}S=lo}
- return {rise:rise(S),knots:[[0,0],[RAMP,S],[len-topWidth(S),S],[len,0]]};
+// A spring run ending at a stop: the spring zone up to the stop, rounded off there.
+function stopFlank(h0,maxRise,len,T0=SPRING_TORQUE){
+ const make=T=>{
+  let rr=0,z;for(let i=0;i<4;i++){z=zoneKnots(h0,T,len-rr);rr=topWidth(z.at(-1)[1])*1.05}
+  return [...zoneKnots(h0,T,len-rr),[len,0]];
+ };
+ let k=make(T0);
+ if(area(k)>maxRise)k=make(bisect(T=>area(make(T))>=maxRise,0,T0));
+ return {rise:area(k),knots:k};
 }
 // Slope knots measured from one end of a span, as an engine profile over that span.
 function profile(knots,span,fromStart){
@@ -151,12 +184,20 @@ function springRecipe(d){
  const {count:n}=d,to=new Map(d.spring),target=p=>to.get(p)??p,spring=p=>to.has(p),deep=i=>d.deep.includes(i),end=i=>i===1||i===n;
  const valley=(i,j)=>target(i)===target(j);
  const run=(c,dir)=>{let k=0;for(let q=c+dir;q>=1&&q<=n&&to.get(q)===c;q+=dir)k++;return k};
- // Layout: a band inside a valley; the other gaps share the rest of the travel evenly.
+ // Layout: a band inside a valley; the other gaps share the rest of the travel evenly. A gap with
+ // a wall is at most WALL_GAP wide, so its descent keeps pushing; plain gaps take what is left, or,
+ // without plain gaps, resting end positions move in from the stops and rise into them.
  const pad=p=>spring(p)?SPRING_BAND/2:0;
- let fixed=0,free=0;for(let i=1;i<n;i++)valley(i,i+1)?fixed+=SPRING_BAND:free++;
+ let fixed=0,free=0,walls=0;for(let i=1;i<n;i++)valley(i,i+1)?fixed+=SPRING_BAND:(free++,(spring(i)||spring(i+1))&&walls++);
  if(!free)throw Error(SPRING_ALL_ONE);
- const G=(116-pad(1)-pad(n)-fixed)/free;
- const angle=[null,-58+pad(1)];for(let i=1;i<n;i++)angle.push(angle[i]+(valley(i,i+1)?SPRING_BAND:G));
+ const room=116-pad(1)-pad(n)-fixed,G=room/free,ends=[1,n].filter(p=>!spring(p)).length;
+ let Gw=G,Gp=G,inset=0;
+ if(walls&&G>WALL_GAP){
+  if(free>walls){Gw=WALL_GAP;Gp=(room-walls*WALL_GAP)/(free-walls)}
+  else if(ends){Gw=WALL_GAP;inset=(room-walls*WALL_GAP)/ends}
+ }
+ const gap=i=>valley(i,i+1)?SPRING_BAND:spring(i)||spring(i+1)?Gw:Gp;
+ const angle=[null,-58+pad(1)+(spring(1)?0:inset)];for(let i=1;i<n;i++)angle.push(angle[i]+gap(i));
  const centres=[];for(let i=1;i<=n;i++)if(!spring(i))centres.push(i);
  // Resting lifts: valley floors at SPRING_FLOOR, positions a wall drops into at WALL_GATE, Deep as
  // usual; each limited by a plain bump beside it.
@@ -178,8 +219,8 @@ function springRecipe(d){
  const wallTo=(c,dir,ga,gate)=>{
   const L=run(c,dir)*SPRING_BAND+ZONE_PAST,room=Math.abs(ga-angle[c]);
   for(let top=SPRING_TOP;top>=TOP_MIN-TOL;top=round2(top-0.1)){
-   const f=wallFlank(top-lift.get(c),L);if(!f)continue;
-   const dk=descent(top-gate,room-f.width);if(dk)return {top,flank:f,descent:dk,at:angle[c]+dir*f.width};
+   const f=wallFlank(lift.get(c),top-lift.get(c),L);if(!f)continue;
+   const dk=descent(top,gate,room-f.width);if(dk)return {top,flank:f,descent:dk,at:angle[c]+dir*f.width};
   }
   throw run(c,dir)>1?tooTight(c):Error(TOO_MANY);
  };
@@ -188,7 +229,7 @@ function springRecipe(d){
   if(sharedTop.has(i))return sharedTop.get(i);
   const a=target(i),b=target(i+1),mid=(angle[i]+angle[i+1])/2;
   for(let top=SPRING_TOP;top>=TOP_MIN-TOL;top=round2(top-0.1)){
-   const fa=wallFlank(top-lift.get(a),run(a,1)*SPRING_BAND+ZONE_PAST,mid-angle[a]),fb=wallFlank(top-lift.get(b),run(b,-1)*SPRING_BAND+ZONE_PAST,angle[b]-mid);
+   const fa=wallFlank(lift.get(a),top-lift.get(a),run(a,1)*SPRING_BAND+ZONE_PAST,mid-angle[a]),fb=wallFlank(lift.get(b),top-lift.get(b),run(b,-1)*SPRING_BAND+ZONE_PAST,angle[b]-mid);
    if(fa&&fb){const r={top,at:mid,left:fa,right:fb};sharedTop.set(i,r);return r}
   }
   throw tooTight(a);
@@ -197,14 +238,16 @@ function springRecipe(d){
   const left=run(c,-1),right=run(c,1);
   if(left){
    const next=c-left-1;
-   if(next<1){const s=stopFlank(SPRING_TOP-lift.get(c),angle[c]+58);point(-58,lift.get(c)+s.rise,'crest','');span('profile',s.knots,false)}
+   if(next<1){const s=stopFlank(lift.get(c),SPRING_TOP-lift.get(c),angle[c]+58);point(-58,lift.get(c)+s.rise,'crest','');span('profile',s.knots,false)}
    else if(spring(next))span('profile',sharedFlanks(next).right.knots,false);
    // otherwise the previous centre already drew the descent and the top
   }
+  if(!left&&k===0&&angle[c]>-58+TOL){const s=stopFlank(lift.get(c),SPRING_TOP-lift.get(c),angle[c]+58);point(-58,lift.get(c)+s.rise,'crest','');span('profile',s.knots,false)}
   point(angle[c],lift.get(c),'gate',String(c));
+  if(!right&&k===centres.length-1&&angle[c]<58-TOL){const s=stopFlank(lift.get(c),SPRING_TOP-lift.get(c),58-angle[c]);span('profile',s.knots,true);point(58,lift.get(c)+s.rise,'crest','');return}
   if(right){
    const last=c+right,next=last+1;
-   if(next>n){const s=stopFlank(SPRING_TOP-lift.get(c),58-angle[c]);span('profile',s.knots,true);point(58,lift.get(c)+s.rise,'crest','');return}
+   if(next>n){const s=stopFlank(lift.get(c),SPRING_TOP-lift.get(c),58-angle[c]);span('profile',s.knots,true);point(58,lift.get(c)+s.rise,'crest','');return}
    if(spring(next)){const t=sharedFlanks(last);span('profile',t.left.knots,true);point(t.at,t.top,'crest','');return}
    const w=wallTo(c,1,angle[next],lift.get(next));span('profile',w.flank.knots,true);point(w.at,w.top,'crest','');span('profile',w.descent,true);return;
   }
@@ -280,3 +323,4 @@ export function withLabels(config,labels){
  const nodes=config.nodes.map(n=>{const i=n.kind==='gate'&&/^\d+$/.test(n.label)?Number(n.label):0,l=i?labels[i-1]:'';return l?{...n,label:l}:n});
  return {...config,nodes,position_labels:[...labels]};
 }
+export const springParts={wallFlank,descent,stopFlank,profile};
