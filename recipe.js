@@ -79,8 +79,9 @@ function deepDeep(G){
 // Spring-back valleys. A target and its spring positions form a valley: the target is the floor,
 // and each spring position sits on a flank. Released anywhere on a flank, the roller slides back
 // to the floor. A flank that leads to another position ends in a wall: the spring zone pushes back
-// with a steady SPRING_TORQUE, then within KNEE the slope jumps to SLOPE_CAP and climbs to
-// SPRING_TOP, at least doubling the push, so there is a clear point to push past. Over the rounded
+// with a steady SPRING_TORQUE (the firmest of three on the push test disk, the one that felt best,
+// 24 November 2026), then within KNEE the slope jumps to SLOPE_CAP and climbs to SPRING_TOP, about
+// doubling the push, so there is a clear point to push past. Over the rounded
 // top the roller is pushed steadily all the way down into the next position, which sits at
 // WALL_GATE below zero so it catches the lever.
 //
@@ -101,7 +102,7 @@ function deepDeep(G){
 // with a wall is at most WALL_GAP wide so its descent keeps pushing. Two valleys whose spring
 // positions face each other meet at one shared top.
 const SPRING_BAND=7,ZONE_PAST=1,SPRING_FLOOR=2.5,SPRING_TOP=2.2,TOP_MIN=1.2,CURVE_MAX=400,RAMP=1,KNEE=0.4,WALL_MIN=0.5;
-const SLOPE_CAP=30,SPRING_TORQUE=42,SPRING_TORQUE_MIN=24,GATE_RAMP=1.5,WALL_GATE=2.5,WALL_GAP=35;
+const SLOPE_CAP=30,SPRING_TORQUE=50,SPRING_TORQUE_MIN=24,GATE_RAMP=1.5,WALL_GATE=2.5,WALL_GAP=35;
 export const SPRING_LIFT_FLOOR=-SPRING_FLOOR;
 export const SPRING_ALL_ONE='Every position springs back to the same one, so the valley would span the whole travel and be too shallow to spring back. A spring-centred lever without a notch disk suits it better.';
 const round2=v=>Math.round(v*100)/100,topWidth=s=>s/CURVE_MAX/rad;
