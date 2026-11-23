@@ -33,7 +33,7 @@ export function statusText(design){
  if(d&&JSON.stringify(d)===JSON.stringify(def))return OK+'This is the disk tested on the Class 323 lever.';
  const shallow=d?deepDepths(d).filter(x=>x.depth<1.8):[];
  const deepNote=shallow.length?` With ${d.count} positions the notches are close, so Deep is shallower here (${shallow.map(x=>`position ${x.position}: ${x.depth.toFixed(2)} mm`).join(', ')}, against 1.8 mm on the tested disk). It holds less than a full Deep and has not been tried on a real lever.`:'';
- return OK+'Uses the same Standard and Deep shapes as the tested disk, but only the 9-position disk has been tried on a real lever.'+(d&&d.smooth.length?' Smooth ranges have not been tried on a real lever.':'')+deepNote+(d&&d.spring?' Spring-back valleys have not been tried on a real lever: their crests rise above the tested 1.4 mm, so check the follower spring travel and the clearances before printing.':'');
+ return OK+'Uses the same Standard and Deep shapes as the tested disk, but only the 9-position disk has been tried on a real lever.'+(d&&d.smooth.length?' Smooth ranges have not been tried on a real lever.':'')+deepNote+(d&&d.spring?' Spring-back walls rise up to 6 mm, past the 3 mm used elsewhere, and only a test disk has been tried: rotate the lever through its whole travel before adding spring preload to check the disk clears the P13 corner.':'');
 }
 // A design opened from a link, e.g. one Trenino builds from a calibrated lever:
 // ?positions=6&deep=1,3&smooth=2,4,5&label=Emergency&label=&label=Off&label=&label=&label=Power&name=BR430

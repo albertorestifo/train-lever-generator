@@ -1,5 +1,5 @@
 import {EditorModel,draftIssues,intervalForSelection,importDraft} from './model.js';
-import {evenlySpaced,ease,FIXED,SHAPES} from './engine.js';
+import {evenlySpaced,segmentEase,FIXED,SHAPES} from './engine.js';
 import './shape-help.js';
 import {notchRecipe,normalizeDesign,DEFAULT_DESIGN} from './recipe.js';
 import {stateOf,cycle,withCount,chipRefusal,targetRefusal,springTarget,countRefusal,viewOf,fileStem,statusText,linkDesign,linkConfig} from './simple.js';
@@ -53,7 +53,7 @@ function renderGraph(){
  const x=v=>40+(v-lo)/(hi-lo)*660,y=v=>170-(v-bottom)/(top-bottom)*125;
  let drawing=`<path d="M40 30V170H710" fill="none" stroke="#c8d4de"/><text x="5" y="36">Height</text><text x="7" y="51">mm</text><text x="7" y="170">${bottom}</text>${bottom<0?`<path d="M40 ${y(0).toFixed(2)}H710" stroke="#e3e9ef"/><text x="7" y="${(y(0)+4).toFixed(2)}">0</text>`:''}<text x="7" y="70">${top.toFixed(1)}</text><text x="40" y="206">${lo.toFixed(1)}°</text><text x="660" y="206">${hi.toFixed(1)}°</text>`;
  n.forEach((a,i)=>{const b=n[i+1];if(!b||![a.angle_deg,a.lift_mm,b.angle_deg,b.lift_mm].every(Number.isFinite))return;
-  const shape=a.shape??'cosine',known=SHAPES.includes(shape),path=Array.from({length:31},(_,j)=>{const u=j/30,h=a.lift_mm+(b.lift_mm-a.lift_mm)*(known?ease(u,shape)[0]:u);return `${j?'L':'M'}${x(a.angle_deg+u*(b.angle_deg-a.angle_deg)).toFixed(2)},${y(h).toFixed(2)}`}).join(' ');
+  const shape=a.shape??'cosine',known=SHAPES.includes(shape)||shape==='profile'&&Array.isArray(a.profile),path=Array.from({length:31},(_,j)=>{const u=j/30,h=a.lift_mm+(b.lift_mm-a.lift_mm)*(known?segmentEase(u,a)[0]:u);return `${j?'L':'M'}${x(a.angle_deg+u*(b.angle_deg-a.angle_deg)).toFixed(2)},${y(h).toFixed(2)}`}).join(' ');
   drawing+=`<g role="button" tabindex="0" data-kind="span" data-index="${i}" aria-label="Select ramp ${i+1} to ${i+2}" class="${model.selection.kind==='span'&&model.selection.index===i?'selected':''}"><path d="${path}" class="ramp"/><path d="${path}" class="hit"/></g>`;
  });
  n.forEach((p,i)=>{if(!Number.isFinite(p.angle_deg)||!Number.isFinite(p.lift_mm))return;const selected=model.selection.kind==='point'&&model.selection.index===i;drawing+=`<g role="button" tabindex="0" data-kind="point" data-index="${i}" aria-label="Select point ${i+1}: ${escape(pointName(p,i))}" class="${selected?'selected ':''}${bad.has(i)?'invalid':''}"><circle cx="${x(p.angle_deg)}" cy="${y(p.lift_mm)}" r="11" fill="transparent"/><circle class="point-dot" cx="${x(p.angle_deg)}" cy="${y(p.lift_mm)}" r="5"/><text x="${x(p.angle_deg)}" y="${y(p.lift_mm)-11}" text-anchor="middle">${i+1}</text></g>`;});

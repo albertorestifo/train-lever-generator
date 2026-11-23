@@ -77,80 +77,147 @@ function deepDeep(G){
  const r=row(DD,G);return r?{depth:r[1],ridge:r[2]}:{depth:0,ridge:standardBump(G)};
 }
 // Spring-back valleys. A target and its spring positions form a valley: the target is the floor,
-// and each spring position is a band on a flank that rises to a crest. Released anywhere on a
-// flank, the roller slides back to the floor, like a Standard notch's flank but wide. Nothing sits
-// on a flank (the engine gives every node zero slope, which would be a resting point), so the
-// spring positions are angles only. Flanks use the tested snap shapes from the floor: steep just
-// off the floor (a strong return at the centre) and rounding gently into the crest, which the
-// roller must be able to follow.
+// and each spring position sits on a flank. Released anywhere on a flank, the roller slides back
+// to the floor. A flank that leads to another position ends in a wall: the spring zone rises at a
+// steady SPRING_SLOPE, then the slope jumps to WALL_SLOPE (the "strong" wall chosen on the printed
+// test disk, 23 November 2026) and climbs to SPRING_TOP, so there is a clear point to push past.
+// Over the rounded top the roller drops steeply (DESCENT_SLOPE) into the next position, which sits
+// at WALL_GATE below zero so it catches the lever; a long descent eases off to DESCENT_TAIL.
 //
-// Bands are SPRING_BAND° wide and the crest sits SPRING_APPROACH° past the outermost band, so the
-// bands stay on the steep part of the flank. A flank rises at SPRING_SLOPE mm/rad on average,
-// keeping the outer band edge near the tested Standard flank (1.2 mm over 7.25°, ~9.5 mm/rad);
-// at the lift limit it may fall to SPRING_SLOPE_MIN, still above that.
-// The floor drops below 0 only when a crest would pass the 3 mm lift limit, and never below the
-// tested Deep depth. Inside a valley, positions are a band apart; the rest of the travel is shared
-// evenly by the other gaps. Two valleys whose spring positions face each other share one crest,
-// since a low point between them would be a place the lever stays. None of this has been printed.
-const SPRING_BAND=7,SPRING_APPROACH=6,SPRING_SLOPE=12,SPRING_SLOPE_MIN=10,SPRING_FLOOR_MIN=-1.9,LIFT_MAX=3,SPRING_DESCENT=6;
+// Physical limits, all real: the 5 mm roller cannot follow a convex pitch curve tighter than about
+// 5.5 mm, so a top rounds off at CURVE_MAX mm/rad²; the pressure angle stays at or under 35°, which
+// caps slopes near WALL_SLOPE; the floor stays at SPRING_FLOOR so the follower spring keeps contact.
+// The top is SPRING_TOP: the test disk's 2.2 mm crest left over 1 cm of free follower travel, so
+// these designs raise the lift limit (lift_limit_mm). Where a gap is too short for the full wall,
+// the top comes down until the flank and its descent fit; a flank whose spring zone would fall
+// below SPRING_SLOPE_MIN is refused. A spring run that ends at a stop rises at SPRING_SLOPE into it.
+// Inside a valley, positions are a band apart; other gaps share the rest of the travel. Two valleys
+// whose spring positions face each other meet at one shared top.
+const SPRING_BAND=7,ZONE_PAST=1,SPRING_FLOOR=1.9,SPRING_TOP=6,TOP_MIN=2.2,CURVE_MAX=400,RAMP=1,KNEE=0.8,WALL_MIN=0.5;
+const SPRING_SLOPE=18,SPRING_SLOPE_MIN=10,WALL_SLOPE=32,DESCENT_SLOPE=32,DESCENT_TAIL=4,GATE_RAMP=1.5,WALL_GATE=1.5;
+export const SPRING_LIFT_LIMIT=SPRING_TOP;
 export const SPRING_ALL_ONE='Every position springs back to the same one, so the valley would span the whole travel and be too shallow to spring back. A spring-centred lever without a notch disk suits it better.';
+const round2=v=>Math.round(v*100)/100,topWidth=s=>s/CURVE_MAX/rad;
+// A flank from a floor up a wall to a top `rise` higher. Knots: [distance from the floor (deg),
+// slope (mm/rad)]. With width W the flank must end exactly there (a shared top).
+function wallFlank(rise,Lmin,W){
+ const r=topWidth(WALL_SLOPE),s2=WALL_SLOPE,fixedLift=s2*KNEE/2*rad+s2*s2/(2*CURVE_MAX);
+ const make=(s1,L,w)=>({width:L+KNEE+w+r,s1,knots:[[0,0],[RAMP,s1],[L,s1],[L+KNEE,s2],[L+KNEE+w,s2],[L+KNEE+w+r,0]]});
+ const s1Lift=L=>(L-RAMP/2+KNEE/2)*rad;
+ if(W===undefined){
+  const w=(rise-fixedLift-SPRING_SLOPE*s1Lift(Lmin))/(s2*rad);
+  if(w>=WALL_MIN)return make(SPRING_SLOPE,Lmin,w);
+  const s1=(rise-fixedLift-s2*WALL_MIN*rad)/s1Lift(Lmin);
+  return s1>=SPRING_SLOPE_MIN&&s1<=SPRING_SLOPE?make(s1,Lmin,WALL_MIN):null;
+ }
+ // Fixed width: L=W-KNEE-w-r. Solve w with s1=SPRING_SLOPE, else keep the shortest wall and solve s1.
+ const w=(rise-fixedLift-SPRING_SLOPE*(W-KNEE-r-RAMP/2+KNEE/2)*rad)/((s2-SPRING_SLOPE)*rad);
+ if(w>=WALL_MIN&&W-KNEE-w-r>=Lmin-TOL)return make(SPRING_SLOPE,W-KNEE-w-r,w);
+ const L=W-KNEE-WALL_MIN-r;if(L<Lmin-TOL)return null;
+ const s1=(rise-fixedLift-s2*WALL_MIN*rad)/s1Lift(L);
+ return s1>=SPRING_SLOPE_MIN&&s1<=SPRING_SLOPE?make(s1,L,WALL_MIN):null;
+}
+// From a top down `drop` over D degrees into a gate: steep first, then easing off if there is room.
+const descentWidth=(s,drop)=>drop/(s*rad)+topWidth(s)/2+GATE_RAMP/2;
+function descent(drop,D){
+ if(descentWidth(DESCENT_SLOPE,drop)>D+TOL)return null;
+ const s=DESCENT_SLOPE,r=topWidth(s),sg=DESCENT_TAIL;
+ // Where the slope eases from s to sg; a single slope if the span is too short for that.
+ const x1=(drop/rad-s*(KNEE/2-r/2)-sg*(D-KNEE/2-GATE_RAMP/2))/(s-sg);
+ if(x1>=r&&x1+KNEE<=D-GATE_RAMP)return [[0,0],[r,s],[x1,s],[x1+KNEE,sg],[D-GATE_RAMP,sg],[D,0]];
+ let lo=sg,hi=s;for(let i=0;i<60;i++){const m=(lo+hi)/2;descentWidth(m,drop)>D?lo=m:hi=m}
+ const t=hi,rt=topWidth(t);return [[0,0],[rt,t],[D-GATE_RAMP,t],[D,0]];
+}
+// A spring run ending at a stop: SPRING_SLOPE up to the stop, rounded off there.
+function stopFlank(maxRise,len){
+ const rise=S=>S*(len-RAMP/2-topWidth(S)/2)*rad;let S=SPRING_SLOPE;
+ if(rise(S)>maxRise){let lo=0,hi=S;for(let i=0;i<60;i++){const m=(lo+hi)/2;rise(m)>maxRise?hi=m:lo=m}S=lo}
+ return {rise:rise(S),knots:[[0,0],[RAMP,S],[len-topWidth(S),S],[len,0]]};
+}
+// Slope knots measured from one end of a span, as an engine profile over that span.
+function profile(knots,span,fromStart){
+ const p=knots.map(([x,s])=>[fromStart?x/span:1-x/span,s]);if(!fromStart)p.reverse();
+ return p.map(([u,s],i)=>[i===0?0:i===p.length-1?1:Math.min(1,Math.max(0,Math.round(u*1e6)/1e6)),Math.round(s*1000)/1000]);
+}
+const TOO_MANY='Too many positions for the travel: a spring-back flank leaves no room beside the next position.';
 function springRecipe(d){
- const {count:n}=d,to=new Map(d.spring),target=p=>to.get(p)??p,spring=p=>to.has(p);
+ const {count:n}=d,to=new Map(d.spring),target=p=>to.get(p)??p,spring=p=>to.has(p),deep=i=>d.deep.includes(i),end=i=>i===1||i===n;
  const valley=(i,j)=>target(i)===target(j);
+ const run=(c,dir)=>{let k=0;for(let q=c+dir;q>=1&&q<=n&&to.get(q)===c;q+=dir)k++;return k};
+ // Layout: a band inside a valley; the other gaps share the rest of the travel evenly.
+ const pad=p=>spring(p)?SPRING_BAND/2:0;
  let fixed=0,free=0;for(let i=1;i<n;i++)valley(i,i+1)?fixed+=SPRING_BAND:free++;
  if(!free)throw Error(SPRING_ALL_ONE);
- // An end spring position gets half a band before the stop, so its band ends at the stop.
- const pad=p=>spring(p)?SPRING_BAND/2:0,G=(116-pad(1)-pad(n)-fixed)/free;
+ const G=(116-pad(1)-pad(n)-fixed)/free;
  const angle=[null,-58+pad(1)];for(let i=1;i<n;i++)angle.push(angle[i]+(valley(i,i+1)?SPRING_BAND:G));
  const centres=[];for(let i=1;i<=n;i++)if(!spring(i))centres.push(i);
- const run=(c,dir)=>{let k=0;for(let q=c+dir;q>=1&&q<=n&&to.get(q)===c;q+=dir)k++;return k};
- const deep=i=>d.deep.includes(i);
- // Where each flank ends: at the stop for an end valley, halfway across a shared gap, or past its
- // outermost band otherwise; a flank's rise follows from its length.
- const flankEnd=(c,dir)=>{
-  const k=run(c,dir),last=c+dir*k,next=last+dir;
-  if(next<1||next>n)return {angle:dir<0?-58:58,shared:false};
-  if(spring(next))return {angle:(angle[last]+angle[next])/2,shared:true};
-  return {angle:angle[last]+dir*(SPRING_BAND/2+SPRING_APPROACH),shared:false};
- };
- const rise=(c,end)=>SPRING_SLOPE*Math.abs(end-angle[c])*rad;
- const floor=new Map(),crestLift=new Map();
+ // Resting lifts: valley floors at SPRING_FLOOR, positions a wall drops into at WALL_GATE, Deep as
+ // usual; each limited by a plain bump beside it.
+ const plainNext=(i,dir)=>{const j=i+dir;return j>=1&&j<=n&&!spring(j)?j:null};
+ const lift=new Map();
  for(const c of centres){
-  const sides=[-1,1].filter(dir=>run(c,dir)).map(dir=>flankEnd(c,dir));
-  if(!sides.length)continue;
-  // Aim for SPRING_SLOPE; within the lift range a flank may fall to SPRING_SLOPE_MIN, still above
-  // the tested Standard flank, and no further.
-  const top=Math.max(...sides.map(s=>rise(c,s.angle))),f=Math.round(Math.max(SPRING_FLOOR_MIN,Math.min(0,LIFT_MAX-top))*100)/100;
-  floor.set(c,f);
-  for(const s of sides){
-   const key=s.angle.toFixed(6),h=Math.round(Math.min(LIFT_MAX,f+rise(c,s.angle))*100)/100;
-   if((h-f)/(Math.abs(s.angle-angle[c])*rad)<SPRING_SLOPE_MIN-TOL)
-    throw Error(`Position ${c} has too many positions springing back to it: its flank would be too shallow to spring back within the ${LIFT_MAX-SPRING_FLOOR_MIN} mm of lift.`);
-   crestLift.set(key,Math.max(crestLift.get(key)??-Infinity,h));
-  }
+  const floor=run(c,-1)||run(c,1),wallSide=(c>1&&spring(c-1))||(c<n&&spring(c+1));
+  let v=floor?SPRING_FLOOR:deep(c)?(end(c)?1.9:1.8):wallSide?WALL_GATE:0;
+  if(v)for(const dir of [-1,1]){const j=plainNext(c,dir);if(j)v=Math.min(v,deepStandard(Math.abs(angle[j]-angle[c]),end(c)).depth)}
+  lift.set(c,-round2(v));
  }
- // A plain resting position between two plain ones keeps the Standard/Deep rules on its real gaps.
- const plainDepth=i=>{if(!deep(i))return 0;let v=i===1||i===n?1.9:1.8;
-  for(const j of [i-1,i+1])if(j>=1&&j<=n)v=Math.min(v,deepStandard(Math.abs(angle[j]-angle[i]),i===1||i===n).depth);
-  return Math.round(v*100)/100};
- const nodes=[],crest=(a)=>nodes.push({angle_deg:a,lift_mm:crestLift.get(a.toFixed(6)),kind:'crest',label:'',shape:'snap_down'});
+ const lowered=i=>lift.get(i)<0;
+ // Points left to right; each carries the shape of the span to the next point.
+ const pts=[],point=(a,h,kind,label)=>pts.push({angle_deg:a,lift_mm:round2(h),kind,label,shape:'snap_up'});
+ const span=(shape,knots,fromStart)=>{const p=pts.at(-1);p.shape=shape;p.pending=knots?{knots,fromStart}:null};
+ const tooTight=c=>Error(`Position ${c} has too many positions springing back to it for the room beside it: its spring zone would be too shallow to spring back.`);
+ // A wall flank from centre c toward `dir`, ending at the next position's gate (angle ga, lift
+ // gate): the tallest top up to SPRING_TOP whose flank and descent fit.
+ const wallTo=(c,dir,ga,gate)=>{
+  const L=run(c,dir)*SPRING_BAND+ZONE_PAST,room=Math.abs(ga-angle[c]);
+  for(let top=SPRING_TOP;top>=TOP_MIN-TOL;top=round2(top-0.1)){
+   const f=wallFlank(top-lift.get(c),L);if(!f)continue;
+   const dk=descent(top-gate,room-f.width);if(dk)return {top,flank:f,descent:dk,at:angle[c]+dir*f.width};
+  }
+  throw run(c,dir)>1?tooTight(c):Error(TOO_MANY);
+ };
+ const sharedTop=new Map();
+ const sharedFlanks=i=>{ // spring positions i and i+1 face each other
+  if(sharedTop.has(i))return sharedTop.get(i);
+  const a=target(i),b=target(i+1),mid=(angle[i]+angle[i+1])/2;
+  for(let top=SPRING_TOP;top>=TOP_MIN-TOL;top=round2(top-0.1)){
+   const fa=wallFlank(top-lift.get(a),run(a,1)*SPRING_BAND+ZONE_PAST,mid-angle[a]),fb=wallFlank(top-lift.get(b),run(b,-1)*SPRING_BAND+ZONE_PAST,angle[b]-mid);
+   if(fa&&fb){const r={top,at:mid,left:fa,right:fb};sharedTop.set(i,r);return r}
+  }
+  throw tooTight(a);
+ };
  centres.forEach((c,k)=>{
   const left=run(c,-1),right=run(c,1);
-  if(left){const e=flankEnd(c,-1);if(!e.shared)crest(e.angle)}
-  nodes.push({angle_deg:angle[c],lift_mm:floor.has(c)?floor.get(c):-plainDepth(c),kind:'gate',label:String(c),shape:'snap_up'});
-  if(right){const e=flankEnd(c,1);crest(e.angle);return}
-  const next=centres[k+1];if(next===undefined||run(next,-1))return;
+  if(left){
+   const next=c-left-1;
+   if(next<1){const s=stopFlank(SPRING_TOP-lift.get(c),angle[c]+58);point(-58,lift.get(c)+s.rise,'crest','');span('profile',s.knots,false)}
+   else if(spring(next))span('profile',sharedFlanks(next).right.knots,false);
+   // otherwise the previous centre already drew the descent and the top
+  }
+  point(angle[c],lift.get(c),'gate',String(c));
+  if(right){
+   const last=c+right,next=last+1;
+   if(next>n){const s=stopFlank(SPRING_TOP-lift.get(c),58-angle[c]);span('profile',s.knots,true);point(58,lift.get(c)+s.rise,'crest','');return}
+   if(spring(next)){const t=sharedFlanks(last);span('profile',t.left.knots,true);point(t.at,t.top,'crest','');return}
+   const w=wallTo(c,1,angle[next],lift.get(next));span('profile',w.flank.knots,true);point(w.at,w.top,'crest','');span('profile',w.descent,true);return;
+  }
+  const nx=centres[k+1];if(nx===undefined)return;
+  if(run(nx,-1)){
+   // The next valley's left flank: a descent from its wall top into c, then up the wall.
+   const w=wallTo(nx,-1,angle[c],lift.get(c));span('profile',w.descent,false);point(w.at,w.top,'crest','');span('profile',w.flank.knots,false);return;
+  }
   // Two plain resting positions: the usual bump between them.
-  const G2=angle[next]-angle[c];
-  if(!deep(c)&&!deep(next)){nodes.push({angle_deg:(angle[c]+angle[next])/2,lift_mm:standardBump(G2),kind:'crest',label:'',shape:'snap_down'});return}
-  const di=deep(c)?c:next,other=di===c?next:c,r=deepStandard(G2,di===1||di===n);
-  nodes.push({angle_deg:angle[di]+Math.sign(angle[other]-angle[di])*r.f*G2,lift_mm:r.bump,kind:'crest',label:'',shape:'snap_down'});
+  const G2=angle[nx]-angle[c];span('snap_up');
+  if(!lowered(c)&&!lowered(nx)){point((angle[c]+angle[nx])/2,standardBump(G2),'crest','');span('snap_down');return}
+  const di=lowered(c)?c:nx,other=di===c?nx:c,r=deepStandard(G2,end(di));
+  point(angle[di]+Math.sign(angle[other]-angle[di])*r.f*G2,r.bump,'crest','');span('snap_down');
  });
- // A crest must leave room to climb from, and drop into, the resting position beside it.
- for(let i=0;i+1<nodes.length;i++){const [a,b]=[nodes[i],nodes[i+1]];
-  if(a.kind!==b.kind&&b.angle_deg-a.angle_deg<SPRING_DESCENT-TOL)
-   throw Error('Too many positions for the travel: a spring-back flank leaves no room beside the next position.')}
- return {name:n+' positions',assumed_extra_preload_mm:0,nodes};
+ // Turn slope knots into profiles over the final spans; plain spans keep their snap shapes.
+ const nodes=pts.map((p,i)=>{const {pending,...node}=p;
+  if(node.shape==='profile')node.profile=profile(pending.knots,pts[i+1].angle_deg-p.angle_deg,pending.fromStart);
+  return node});
+ for(let i=0;i+1<nodes.length;i++)if(nodes[i+1].angle_deg-nodes[i].angle_deg<0.5)throw Error(TOO_MANY);
+ return {name:n+' positions',assumed_extra_preload_mm:0,lift_limit_mm:SPRING_LIFT_LIMIT,nodes};
 }
 export function notchRecipe(design){
  const d=normalizeDesign(design);if(!d)throw Error('Invalid notch design');

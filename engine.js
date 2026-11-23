@@ -1,15 +1,24 @@
 import earcut, {deviation} from './vendor/earcut.js';
-export const FIXED={thickness_mm:8,inner_radius_mm:29,bolt_radius_mm:36,hole_diameter_mm:3.4,head_diameter_mm:6.2,head_depth_mm:3,roller_radius_mm:5,follower_arm_mm:35,pivot_to_roller_mm:53,stop_angle_deg:58,profile_angle_deg:70,min_lift_mm:-2,max_lift_mm:3};
+export const FIXED={thickness_mm:8,inner_radius_mm:29,bolt_radius_mm:36,hole_diameter_mm:3.4,head_diameter_mm:6.2,head_depth_mm:3,roller_radius_mm:5,follower_arm_mm:35,pivot_to_roller_mm:53,stop_angle_deg:58,profile_angle_deg:70,min_lift_mm:-2,max_lift_mm:3,extended_max_lift_mm:8};
 const rad=d=>d*Math.PI/180, deg=r=>r*180/Math.PI;
 export const SHAPES=['cosine','quintic','linear_blend','snap_up','snap_down'];
+// A design may raise the lift limit (lift_limit_mm, up to extended_max_lift_mm) when it has been
+// checked against the real follower travel; hand-drawn profiles keep max_lift_mm.
+export const liftLimit=c=>{const v=c&&c.lift_limit_mm;return Number.isFinite(v)&&v>FIXED.max_lift_mm&&v<=FIXED.extended_max_lift_mm?v:FIXED.max_lift_mm};
+// A 'profile' span follows a piecewise-linear slope: profile=[[u,w],...] from u=0 to u=1, w>=0
+// relative slope, scaled so the span reaches its end lift. It starts and ends at zero slope.
+export function validProfile(p){return Array.isArray(p)&&p.length>=3&&p.length<=16&&p.every(x=>Array.isArray(x)&&x.length===2&&x.every(Number.isFinite)&&x[1]>=0)&&p[0][0]===0&&p.at(-1)[0]===1&&p[0][1]===0&&p.at(-1)[1]===0&&p.every((x,i)=>!i||x[0]>=p[i-1][0])&&p.some(x=>x[1]>0)}
+function profileEase(u,p){let acc=0,s=null,ds=0;for(let i=0;i+1<p.length;i++){const [u0,w0]=p[i],[u1,w1]=p[i+1];if(s===null&&u<=u1&&u1>u0){const w=w0+(w1-w0)*(u-u0)/(u1-u0);s=acc+(w0+w)/2*(u-u0);ds=w}acc+=(w0+w1)/2*(u1-u0)}return [(s??acc)/acc,ds/acc]}
+export const segmentEase=(u,n)=>n.shape==='profile'?profileEase(u,n.profile):ease(u,n.shape??'cosine');
 export class DesignError extends Error{}
 const fail=m=>{throw new DesignError(m)};
 export function prepare(c){
  if(!c||!Array.isArray(c.nodes)||c.nodes.length<3||c.nodes.length>101)fail('Use 3–101 motion nodes, ordered by increasing angle.');
+ const top=liftLimit(c);
  for(const n of c.nodes){
   if(!n||!Number.isFinite(n.angle_deg)||!Number.isFinite(n.lift_mm))fail('Every node needs finite numeric angle and lift.');
-  if(!SHAPES.includes(n.shape??'cosine'))fail('Unknown transition shape.');
-  if(n.lift_mm<FIXED.min_lift_mm||n.lift_mm>FIXED.max_lift_mm)fail('Roller lift must stay between -2 and 3 mm.');
+  if(n.shape==='profile'?!validProfile(n.profile):!SHAPES.includes(n.shape??'cosine'))fail('Unknown transition shape.');
+  if(n.lift_mm<FIXED.min_lift_mm||n.lift_mm>top)fail(`Roller lift must stay between -2 and ${top} mm.`);
  }
  const a=c.nodes.map(n=>n.angle_deg);
  if(Math.abs(a[0]+58)>1e-8||Math.abs(a.at(-1)-58)>1e-8)fail('First/last nodes must stay at -58/+58 degrees to match the mechanical stops.');
@@ -30,7 +39,7 @@ export function ease(u,shape){
 }
 export function motion(d,n){
  if(d<=n[0].angle_deg)return [n[0].lift_mm,0];if(d>=n.at(-1).angle_deg)return [n.at(-1).lift_mm,0];
- let i=0;while(n[i+1].angle_deg<=d)i++;const a=n[i],b=n[i+1],span=b.angle_deg-a.angle_deg,[s,ds]=ease((d-a.angle_deg)/span,a.shape??'cosine'),dh=b.lift_mm-a.lift_mm;
+ let i=0;while(n[i+1].angle_deg<=d)i++;const a=n[i],b=n[i+1],span=b.angle_deg-a.angle_deg,[s,ds]=segmentEase((d-a.angle_deg)/span,a),dh=b.lift_mm-a.lift_mm;
  return [a.lift_mm+dh*s,dh*ds/rad(span)];
 }
 export function geometryAt(d,n){
@@ -70,7 +79,7 @@ export function build(config,mesh=false){
  const maxCol=i=>Math.max(...kin.map(k=>k[i])),minGap=Math.min(...kin.map(k=>k[5])),maxGap=maxCol(5);
  if(minGap<-.015||maxGap>.015)fail(`Roller cannot follow requested motion: contact error ${minGap.toFixed(3)}..${maxGap.toFixed(3)} mm. Widen ramps or reduce lift.`);
  if(maxCol(4)>35)fail(`Pressure angle ${maxCol(4).toFixed(1)} degrees exceeds the conservative 35 degree limit.`);
- const maxR=Math.max(...outer.map(p=>Math.hypot(...p)));if(maxR>FIXED.pivot_to_roller_mm-FIXED.roller_radius_mm+FIXED.max_lift_mm+.001)fail('Profile exceeds the generator radial limit.');
+ const maxR=Math.max(...outer.map(p=>Math.hypot(...p)));if(maxR>FIXED.pivot_to_roller_mm-FIXED.roller_radius_mm+liftLimit(config)+.001)fail('Profile exceeds the generator radial limit.');
  const preload=config.assumed_extra_preload_mm??0;
  const report={name:config.name??'Custom',interface:FIXED,nodes,gate_count:nodes.filter(n=>n.kind==='gate').length,max_outer_radius_mm:maxR,contact_poses:1201,checked_angle_range_deg:[-60,60],min_contact_error_mm:minGap,max_contact_error_mm:maxGap,max_pressure_angle_deg:maxCol(4),max_follower_lift_mm:maxCol(1),min_follower_lift_mm:Math.min(...kin.map(k=>k[1])),max_spring_seat_rise_mm:maxCol(3),assumed_spring_free_mm:20,assumed_gate_spring_spacing_mm:17,assumed_extra_preload_mm:preload,minimum_vertical_spring_spacing_mm:17-preload-maxCol(3),minimum_mounting_head_ligament_mm:minWeb,profile_angle_range_deg:[-70,70],physical_validation:'Prototype; actual spring rate, solid height, friction and tactile force unmeasured.'};
  report.mechanical_review_required=maxCol(1)>1.4;
@@ -108,7 +117,7 @@ export function evenlySpaced(n,height=.8){if(!Number.isInteger(n)||n<2||n>51)fai
 export function scad({plate,holes}){return `// Finite-roller compensated v23 cam; mm. Broad flat face down, counterbores up.\n$fn=96;\nprofile=${JSON.stringify(plate)};\nmounting_centres=${JSON.stringify(holes)};\ntranslate([128,95,0]) difference(){\n linear_extrude(height=8) polygon(profile);\n for(p=mounting_centres){\n translate([p[0],p[1],-0.01]) cylinder(h=8.02,d=3.4);\n translate([p[0],p[1],5]) cylinder(h=3.01,d=6.2);\n }\n}\n`;}
 export function svg({plate,holes,report,kinematics}){
  const escape=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
- const path=plate.map(([x,y],i)=>(i?'L':'M')+`${(x*5+310).toFixed(2)},${(350-y*5).toFixed(2)}`).join(' ')+' Z',lo=Math.min(0,report.min_follower_lift_mm??0),hy=h=>570-(h-lo)*(140/(FIXED.max_lift_mm-lo)),hpath=kinematics.map(([d,h],i)=>(i?'L':'M')+`${(70+(d+60)*4.4).toFixed(2)},${hy(h).toFixed(2)}`).join(' '),q=geometryAt(0,report.nodes)[1];
+ const path=plate.map(([x,y],i)=>(i?'L':'M')+`${(x*5+310).toFixed(2)},${(350-y*5).toFixed(2)}`).join(' ')+' Z',lo=Math.min(0,report.min_follower_lift_mm??0),hi=Math.max(FIXED.max_lift_mm,Math.ceil(report.max_follower_lift_mm??0)),hy=h=>570-(h-lo)*(140/(hi-lo)),hpath=kinematics.map(([d,h],i)=>(i?'L':'M')+`${(70+(d+60)*4.4).toFixed(2)},${hy(h).toFixed(2)}`).join(' '),q=geometryAt(0,report.nodes)[1];
  const holesSvg=holes.map(([x,y])=>`<circle cx="${x*5+310}" cy="${350-y*5}" r="15.5" fill="white" stroke="#85909c"/><circle cx="${x*5+310}" cy="${350-y*5}" r="8.5" fill="white" stroke="#222"/>`).join('');
- return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 660 660" role="img" aria-label="Notch profile and follower lift"><rect width="660" height="660" fill="white"/><style>text{font:14px sans-serif;fill:#182638}</style><text x="25" y="26" style="font-size:20px">${escape(report.name)}</text><text x="25" y="50">Actual compensated edge | blue circle = 10 mm roller at centre</text><path d="${path}" fill="#e3e9ef" stroke="#172536" stroke-width="2"/>${holesSvg}<circle cx="${q[0]*5+310}" cy="${350+q[1]*5}" r="25" fill="none" stroke="#1681b6" stroke-width="2"/><text x="25" y="397">Follower lift (mm): larger barriers / steeper slopes resist motion more.</text><path d="M70 430 V570 H600" fill="none" stroke="#888"/><path d="${hpath}" fill="none" stroke="#bd4931" stroke-width="2"/><text x="40" y="438">${FIXED.max_lift_mm}</text><text x="50" y="${(hy(0)+4).toFixed(0)}">0</text>${lo<0&&hy(0)<=556?`<text x="30" y="574">${lo.toFixed(2).replace(/\.?0+$/,'')}</text>`:''}<text x="65" y="592">-60 deg</text><text x="320" y="592">0 deg</text><text x="570" y="592">+60 deg</text><text x="25" y="625">Pressure angle max ${report.max_pressure_angle_deg.toFixed(1)} deg; travel max ${report.max_follower_lift_mm.toFixed(2)} mm</text><text x="25" y="647">Nominal geometry only; physical feel depends on preload, friction and printing.</text></svg>`;
+ return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 660 660" role="img" aria-label="Notch profile and follower lift"><rect width="660" height="660" fill="white"/><style>text{font:14px sans-serif;fill:#182638}</style><text x="25" y="26" style="font-size:20px">${escape(report.name)}</text><text x="25" y="50">Actual compensated edge | blue circle = 10 mm roller at centre</text><path d="${path}" fill="#e3e9ef" stroke="#172536" stroke-width="2"/>${holesSvg}<circle cx="${q[0]*5+310}" cy="${350+q[1]*5}" r="25" fill="none" stroke="#1681b6" stroke-width="2"/><text x="25" y="397">Follower lift (mm): larger barriers / steeper slopes resist motion more.</text><path d="M70 430 V570 H600" fill="none" stroke="#888"/><path d="${hpath}" fill="none" stroke="#bd4931" stroke-width="2"/><text x="40" y="438">${hi}</text><text x="50" y="${(hy(0)+4).toFixed(0)}">0</text>${lo<0&&hy(0)<=556?`<text x="30" y="574">${lo.toFixed(2).replace(/\.?0+$/,'')}</text>`:''}<text x="65" y="592">-60 deg</text><text x="320" y="592">0 deg</text><text x="570" y="592">+60 deg</text><text x="25" y="625">Pressure angle max ${report.max_pressure_angle_deg.toFixed(1)} deg; travel max ${report.max_follower_lift_mm.toFixed(2)} mm</text><text x="25" y="647">Nominal geometry only; physical feel depends on preload, friction and printing.</text></svg>`;
 }
